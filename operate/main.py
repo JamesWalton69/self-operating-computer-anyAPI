@@ -1,21 +1,34 @@
 """
 Self-Operating Computer
 """
+import os
 import argparse
+from dotenv import load_dotenv
 from operate.utils.style import ANSI_BRIGHT_MAGENTA
 from operate.operate import main
 
+load_dotenv()
+
 
 def main_entry():
+    default_model = os.getenv("OPENAI_MODEL_NAME", "agy/gemini-3.7-flash-low")
+
     parser = argparse.ArgumentParser(
         description="Run the self-operating-computer with a specified model."
     )
     parser.add_argument(
         "-m",
         "--model",
-        help="Specify the model to use",
+        help="Specify the model to use (or any custom model name)",
         required=False,
-        default="gpt-4-with-ocr",
+        default=default_model,
+    )
+
+    # Add GUI flag
+    parser.add_argument(
+        "--gui",
+        help="Launch the desktop Studio GUI",
+        action="store_true",
     )
 
     # Add a voice flag
@@ -42,6 +55,12 @@ def main_entry():
 
     try:
         args = parser.parse_args()
+
+        if args.gui:
+            from operate.gui.app import launch_gui
+            launch_gui()
+            return
+
         main(
             args.model,
             terminal_prompt=args.prompt,

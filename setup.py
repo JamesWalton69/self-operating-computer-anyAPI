@@ -16,6 +16,7 @@ setup(
     entry_points={
         "console_scripts": [
             "operate=operate.main:main_entry",
+            "operate-gui=operate.gui.app:launch_gui",
         ],
     },
     package_data={

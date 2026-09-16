@@ -4,12 +4,20 @@ import re
 
 def convert_percent_to_decimal(percent):
     try:
-        # Remove the '%' sign and convert to float
-        decimal_value = float(percent)
+        if percent is None:
+            return None
+        if isinstance(percent, (int, float)):
+            decimal_value = float(percent)
+        else:
+            cleaned = str(percent).replace("%", "").strip()
+            decimal_value = float(cleaned)
 
-        # Convert to decimal (e.g., 20% -> 0.20)
+        # If given as percentage whole number (e.g. 20 or 20%), convert to 0.20
+        if decimal_value > 1.0:
+            decimal_value = decimal_value / 100.0
+
         return decimal_value
-    except ValueError as e:
+    except (ValueError, TypeError) as e:
         print(f"[convert_percent_to_decimal] error: {e}")
         return None
 

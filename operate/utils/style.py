@@ -1,18 +1,20 @@
 import sys
 import platform
 import os
-from prompt_toolkit.styles import Style as PromptStyle
-
-
-# Define style
-style = PromptStyle.from_dict(
-    {
-        "dialog": "bg:#88ff88",
-        "button": "bg:#ffffff #000000",
-        "dialog.body": "bg:#44cc44 #ffffff",
-        "dialog shadow": "bg:#003800",
-    }
-)
+try:
+    from prompt_toolkit.styles import Style as PromptStyle
+    # Define style
+    style = PromptStyle.from_dict(
+        {
+            "dialog": "bg:#88ff88",
+            "button": "bg:#ffffff #000000",
+            "dialog.body": "bg:#44cc44 #ffffff",
+            "dialog shadow": "bg:#003800",
+        }
+    )
+except ImportError:
+    PromptStyle = None
+    style = None
 
 
 # Check if on a windows terminal that supports ANSI escape codes

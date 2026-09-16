@@ -5,11 +5,21 @@ import os
 import time
 import traceback
 
-import easyocr
-import ollama
-import pkg_resources
+easyocr = None
+
+try:
+    import ollama
+except ImportError:
+    ollama = None
+
+try:
+    import pkg_resources
+except ImportError:
+    pkg_resources = None
+
 from PIL import Image
-from ultralytics import YOLO
+
+YOLO = None
 
 from operate.config import Config
 from operate.exceptions import ModelNotRecognizedException
@@ -24,11 +34,26 @@ from operate.utils.label import (
     get_label_coordinates,
 )
 from operate.utils.ocr import get_text_coordinates, get_text_element
+from operate.utils.retry import call_with_retry
 from operate.utils.screenshot import capture_screen_with_cursor, compress_screenshot
 from operate.utils.style import ANSI_BRIGHT_MAGENTA, ANSI_GREEN, ANSI_RED, ANSI_RESET
 
 # Load configuration
 config = Config()
+
+_OCR_READER = None
+
+
+def get_ocr_reader():
+    global _OCR_READER, easyocr
+    if _OCR_READER is None:
+        if easyocr is None:
+            try:
+                import easyocr
+            except ImportError:
+                raise ImportError("Please install easyocr using 'pip install easyocr'")
+        _OCR_READER = easyocr.Reader(["en"])
+    return _OCR_READER
 
 
 async def get_next_action(model, messages, objective, session_id):
@@ -62,7 +87,33 @@ async def get_next_action(model, messages, objective, session_id):
     if model == "claude-3":
         operation = await call_claude_3_with_ocr(messages, objective, model)
         return operation, None
-    raise ModelNotRecognizedException(model)
+
+    # Custom model handling for any arbitrary model name or custom OpenAI-compatible endpoint
+    raw_model = model
+    targeting_mode = "direct"  # Default to fast, native multimodal direct vision
+    if model.endswith("-with-som") or model.endswith("-som"):
+        targeting_mode = "som"
+        raw_model = model.replace("-with-som", "").replace("-som", "")
+    elif model.endswith("-direct"):
+        targeting_mode = "direct"
+        raw_model = model.replace("-direct", "")
+    elif model.endswith("-with-ocr") or model.endswith("-ocr"):
+        targeting_mode = "ocr"
+        raw_model = model.replace("-with-ocr", "").replace("-ocr", "")
+
+    # If raw_model is empty (e.g. user just passed -m with-ocr), fallback to config custom model or gpt-4o
+    if not raw_model:
+        raw_model = getattr(config, "custom_model_name", None) or os.getenv("OPENAI_MODEL_NAME", "gpt-4o")
+
+    if targeting_mode == "som":
+        operation = await call_custom_model_with_som(messages, objective, model, raw_model)
+        return operation, None
+    elif targeting_mode == "direct":
+        operation = await call_custom_model_direct(messages, objective, model, raw_model)
+        return operation, None
+    else:
+        operation = await call_custom_model_with_ocr(messages, objective, model, raw_model)
+        return operation, None
 
 
 def call_gpt_4o(messages):
@@ -76,8 +127,7 @@ def call_gpt_4o(messages):
             os.makedirs(screenshots_dir)
 
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
-        # Call the function to capture the screen with the cursor
-        capture_screen_with_cursor(screenshot_filename)
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
         with open(screenshot_filename, "rb") as img_file:
             img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
@@ -105,11 +155,13 @@ def call_gpt_4o(messages):
         }
         messages.append(vision_message)
 
-        response = client.chat.completions.create(
+        response = call_with_retry(
+            client.chat.completions.create,
             model="gpt-4o",
             messages=messages,
             presence_penalty=1,
             frequency_penalty=1,
+            caller_name="gpt-4o",
         )
 
         content = response.choices[0].message.content
@@ -185,9 +237,11 @@ async def call_qwen_vl_with_ocr(messages, objective, model):
         }
         messages.append(vision_message)
 
-        response = client.chat.completions.create(
+        response = call_with_retry(
+            client.chat.completions.create,
             model="qwen2.5-vl-72b-instruct",
             messages=messages,
+            caller_name="qwen-vl",
         )
 
         content = response.choices[0].message.content
@@ -285,7 +339,11 @@ def call_gemini_pro_vision(messages, objective):
         if config.verbose:
             print("[call_gemini_pro_vision] model", model)
 
-        response = model.generate_content([prompt, Image.open(screenshot_filename)])
+        response = call_with_retry(
+            model.generate_content,
+            [prompt, Image.open(screenshot_filename)],
+            caller_name="gemini-pro-vision (Google)",
+        )
 
         content = response.text[1:]
         if config.verbose:
@@ -326,8 +384,7 @@ async def call_gpt_4o_with_ocr(messages, objective, model):
             os.makedirs(screenshots_dir)
 
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
-        # Call the function to capture the screen with the cursor
-        capture_screen_with_cursor(screenshot_filename)
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
         with open(screenshot_filename, "rb") as img_file:
             img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
@@ -349,9 +406,11 @@ async def call_gpt_4o_with_ocr(messages, objective, model):
         }
         messages.append(vision_message)
 
-        response = client.chat.completions.create(
+        response = call_with_retry(
+            client.chat.completions.create,
             model="gpt-4o",
             messages=messages,
+            caller_name="gpt-4o",
         )
 
         content = response.choices[0].message.content
@@ -438,7 +497,7 @@ async def call_gpt_4_1_with_ocr(messages, objective, model):
             os.makedirs(screenshots_dir)
 
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
-        capture_screen_with_cursor(screenshot_filename)
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
         with open(screenshot_filename, "rb") as img_file:
             img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
@@ -460,9 +519,11 @@ async def call_gpt_4_1_with_ocr(messages, objective, model):
         }
         messages.append(vision_message)
 
-        response = client.chat.completions.create(
+        response = call_with_retry(
+            client.chat.completions.create,
             model="gpt-4.1",
             messages=messages,
+            caller_name="gpt-4.1",
         )
 
         content = response.choices[0].message.content
@@ -545,8 +606,7 @@ async def call_o1_with_ocr(messages, objective, model):
             os.makedirs(screenshots_dir)
 
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
-        # Call the function to capture the screen with the cursor
-        capture_screen_with_cursor(screenshot_filename)
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
         with open(screenshot_filename, "rb") as img_file:
             img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
@@ -568,9 +628,11 @@ async def call_o1_with_ocr(messages, objective, model):
         }
         messages.append(vision_message)
 
-        response = client.chat.completions.create(
+        response = call_with_retry(
+            client.chat.completions.create,
             model="o1",
             messages=messages,
+            caller_name="o1",
         )
 
         content = response.choices[0].message.content
@@ -657,8 +719,7 @@ async def call_gpt_4o_labeled(messages, objective, model):
             os.makedirs(screenshots_dir)
 
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
-        # Call the function to capture the screen with the cursor
-        capture_screen_with_cursor(screenshot_filename)
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
         with open(screenshot_filename, "rb") as img_file:
             img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
@@ -690,11 +751,13 @@ async def call_gpt_4o_labeled(messages, objective, model):
         }
         messages.append(vision_message)
 
-        response = client.chat.completions.create(
+        response = call_with_retry(
+            client.chat.completions.create,
             model="gpt-4o",
             messages=messages,
             presence_penalty=1,
             frequency_penalty=1,
+            caller_name="gpt-4o",
         )
 
         content = response.choices[0].message.content
@@ -798,8 +861,7 @@ def call_ollama_llava(messages):
             os.makedirs(screenshots_dir)
 
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
-        # Call the function to capture the screen with the cursor
-        capture_screen_with_cursor(screenshot_filename)
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
         if len(messages) == 1:
             user_prompt = get_user_first_message_prompt()
@@ -879,7 +941,7 @@ async def call_claude_3_with_ocr(messages, objective, model):
             os.makedirs(screenshots_dir)
 
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
-        capture_screen_with_cursor(screenshot_filename)
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
         # downsize screenshot due to 5MB size limit
         with open(screenshot_filename, "rb") as img_file:
@@ -936,11 +998,13 @@ async def call_claude_3_with_ocr(messages, objective, model):
         messages.append(vision_message)
 
         # anthropic api expect system prompt as an separate argument
-        response = client.messages.create(
+        response = call_with_retry(
+            client.messages.create,
             model="claude-3-opus-20240229",
             max_tokens=3000,
             system=messages[0]["content"],
             messages=messages[1:],
+            caller_name="claude-3",
         )
 
         content = response.content[0].text
@@ -1115,25 +1179,346 @@ def confirm_system_prompt(messages, objective, model):
 
 
 def clean_json(content):
+    if not content:
+        return "[]"
     if config.verbose:
         print("\n\n[clean_json] content before cleaning", content)
-    if content.startswith("```json"):
-        content = content[
-            len("```json") :
-        ].strip()  # Remove starting ```json and trim whitespace
-    elif content.startswith("```"):
-        content = content[
-            len("```") :
-        ].strip()  # Remove starting ``` and trim whitespace
-    if content.endswith("```"):
-        content = content[
-            : -len("```")
-        ].strip()  # Remove ending ``` and trim whitespace
 
-    # Normalize line breaks and remove any unwanted characters
+    # Use regex to extract ```json ... ``` or ``` ... ```
+    import re
+    match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', content)
+    if match:
+        content = match.group(1).strip()
+    elif content.startswith("```"):
+        content = re.sub(r'^```(?:json)?\s*', '', content)
+        content = re.sub(r'\s*```$', '', content).strip()
+
+    # If it's wrapped in square brackets or curly braces somewhere in text
+    if not (content.startswith("[") or content.startswith("{")):
+        match_bracket = re.search(r'(\[[\s\S]*\]|\{[\s\S]*\})', content)
+        if match_bracket:
+            content = match_bracket.group(1).strip()
+
+    # Normalize line breaks
     content = "\n".join(line.strip() for line in content.splitlines())
 
     if config.verbose:
         print("\n\n[clean_json] content after cleaning", content)
 
     return content
+
+
+def _encode_image_fast(screenshot_filename):
+    """Load, clamp to max 1920, and encode screenshot as high-quality optimized JPEG (~150KB)."""
+    from operate.utils.screenshot import get_latest_screenshot
+    if screenshot_filename == "IN_MEMORY_SCREENSHOT" or not os.path.exists(screenshot_filename):
+        img = get_latest_screenshot()
+    else:
+        try:
+            img = Image.open(screenshot_filename)
+        except Exception:
+            img = get_latest_screenshot()
+
+    if img is None:
+        img = Image.new("RGB", (1920, 1080), color=(30, 30, 30))
+
+    if img.mode in ("RGBA", "LA", "P"):
+        img = img.convert("RGB")
+
+    # Limit max dimension to 1920 to keep upload lightning fast without losing UI clarity
+    max_dim = 1920
+    w, h = img.size
+    if max(w, h) > max_dim:
+        scale = max_dim / max(w, h)
+        img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
+
+    import io
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85, optimize=True)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64):
+    """
+    Construct API messages payload keeping only the LATEST image.
+    Replaces older images in conversation history with text placeholders to prevent token explosion and vision confusion.
+    """
+    clean_messages = []
+    for m in messages:
+        m_copy = dict(m)
+        if m_copy.get("role") == "user" and isinstance(m_copy.get("content"), list):
+            new_content = []
+            for item in m_copy["content"]:
+                if isinstance(item, dict) and item.get("type") == "image_url":
+                    new_content.append({"type": "text", "text": "[Previous desktop screenshot - action taken]"})
+                else:
+                    new_content.append(item)
+            m_copy["content"] = new_content
+        clean_messages.append(m_copy)
+
+    vision_message = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": user_prompt},
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
+            },
+        ],
+    }
+    clean_messages.append(vision_message)
+    # Also record in original messages list for session tracking
+    messages.append(vision_message)
+    return clean_messages
+
+
+async def call_custom_model_with_ocr(messages, objective, model, raw_model):
+    if config.verbose:
+        print(f"[call_custom_model_with_ocr] model: {model}, raw_model: {raw_model}")
+
+    try:
+        client = config.initialize_openai()
+
+        confirm_system_prompt(messages, objective, model)
+        screenshots_dir = "screenshots"
+        if not os.path.exists(screenshots_dir):
+            os.makedirs(screenshots_dir)
+
+        screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
+
+        img_base64 = _encode_image_fast(screenshot_filename)
+
+        if len(messages) == 1:
+            user_prompt = get_user_first_message_prompt()
+        else:
+            user_prompt = get_user_prompt()
+
+        api_messages = _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64)
+
+        response = call_with_retry(
+            client.chat.completions.create,
+            model=raw_model,
+            messages=api_messages,
+            caller_name=f"{raw_model} (Google/Custom)",
+        )
+
+        content = response.choices[0].message.content
+        content = clean_json(content)
+        content_str = content
+        content = json.loads(content)
+        if isinstance(content, dict):
+            content = [content]
+
+        processed_content = []
+
+        for operation in content:
+            op_type = operation.get("operation", "").lower()
+            if op_type in ["click", "double_click", "right_click", "middle_click"]:
+                # If model already provided coordinates, use them directly
+                if "x" in operation and "y" in operation and operation["x"] is not None and operation["y"] is not None:
+                    processed_content.append(operation)
+                    continue
+
+                text_to_click = operation.get("text")
+                if config.verbose:
+                    print(
+                        f"[call_custom_model_with_ocr][{op_type}] text_to_click",
+                        text_to_click,
+                    )
+                if not text_to_click:
+                    print(
+                        f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Warn] {op_type} operation missing text and coordinates: {operation}{ANSI_RESET}"
+                    )
+                    continue
+
+                reader = get_ocr_reader()
+                if screenshot_filename != "IN_MEMORY_SCREENSHOT" and os.path.exists(screenshot_filename):
+                    ocr_target = screenshot_filename
+                else:
+                    import numpy as np
+                    ocr_target = np.array(get_latest_screenshot())
+
+                try:
+                    result = reader.readtext(ocr_target)
+                    text_element_index = get_text_element(
+                        result, text_to_click, ocr_target
+                    )
+                    coordinates = get_text_coordinates(
+                        result, text_element_index, ocr_target
+                    )
+
+                    operation["x"] = coordinates["x"]
+                    operation["y"] = coordinates["y"]
+
+                    if config.verbose:
+                        print(
+                            f"[call_custom_model_with_ocr][{op_type}] coordinates",
+                            coordinates,
+                        )
+                    processed_content.append(operation)
+                except Exception as ocr_err:
+                    print(
+                        f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_YELLOW}[OCR] Could not locate text '{text_to_click}': {ocr_err}{ANSI_RESET}"
+                    )
+            else:
+                processed_content.append(operation)
+
+        assistant_message = {"role": "assistant", "content": content_str}
+        messages.append(assistant_message)
+        return processed_content
+
+    except Exception as e:
+        print(
+            f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_BRIGHT_MAGENTA}[{raw_model}] That did not work: {e} {ANSI_RESET}"
+        )
+        if config.verbose:
+            print("[Self-Operating Computer][call_custom_model_with_ocr] error", e)
+            traceback.print_exc()
+        return [{"operation": "done", "summary": f"Execution halted due to model error: {e}"}]
+
+
+async def call_custom_model_direct(messages, objective, model, raw_model):
+    if config.verbose:
+        print(f"[call_custom_model_direct] model: {model}, raw_model: {raw_model}")
+
+    try:
+        client = config.initialize_openai()
+
+        confirm_system_prompt(messages, objective, model)
+        screenshots_dir = "screenshots"
+        if not os.path.exists(screenshots_dir):
+            os.makedirs(screenshots_dir)
+
+        screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
+
+        img_base64 = _encode_image_fast(screenshot_filename)
+
+        if len(messages) == 1:
+            user_prompt = get_user_first_message_prompt()
+        else:
+            user_prompt = get_user_prompt()
+
+        api_messages = _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64)
+
+        response = call_with_retry(
+            client.chat.completions.create,
+            model=raw_model,
+            messages=api_messages,
+            caller_name=f"{raw_model} (Google/Custom)",
+        )
+
+        content = response.choices[0].message.content
+        content = clean_json(content)
+        assistant_message = {"role": "assistant", "content": content}
+        messages.append(assistant_message)
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            parsed = [parsed]
+        return parsed
+
+    except Exception as e:
+        print(
+            f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_BRIGHT_MAGENTA}[{raw_model}] Error: {e} {ANSI_RESET}"
+        )
+        if config.verbose:
+            traceback.print_exc()
+        return [{"operation": "done", "summary": f"Execution halted due to error: {e}"}]
+
+
+async def call_custom_model_with_som(messages, objective, model, raw_model):
+    if config.verbose:
+        print(f"[call_custom_model_with_som] model: {model}, raw_model: {raw_model}")
+
+    try:
+        client = config.initialize_openai()
+
+        confirm_system_prompt(messages, objective, model)
+        screenshots_dir = "screenshots"
+        if not os.path.exists(screenshots_dir):
+            os.makedirs(screenshots_dir)
+
+        screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
+        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
+
+        yolo_model = YOLO(
+            pkg_resources.resource_filename("operate.models.weights", "best.pt")
+        )
+        result = yolo_model(screenshot_filename)
+        labeled_screenshot_filename = os.path.join(
+            screenshots_dir, "labeled_screenshot.png"
+        )
+        label_coordinates = add_labels(
+            result, screenshot_filename, labeled_screenshot_filename
+        )
+
+        with open(labeled_screenshot_filename, "rb") as img_file:
+            img_base64_labeled = base64.b64encode(img_file.read()).decode("utf-8")
+
+        with open(screenshot_filename, "rb") as img_file:
+            img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+
+        if len(messages) == 1:
+            user_prompt = get_user_first_message_prompt()
+        else:
+            user_prompt = get_user_prompt()
+
+        vision_message = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{img_base64_labeled}"
+                    },
+                },
+            ],
+        }
+        messages.append(vision_message)
+
+        response = call_with_retry(
+            client.chat.completions.create,
+            model=raw_model,
+            messages=messages,
+            caller_name=f"{raw_model} (Google/Custom)",
+        )
+
+        content = response.choices[0].message.content
+        content = clean_json(content)
+        assistant_message = {"role": "assistant", "content": content}
+        messages.append(assistant_message)
+        content = json.loads(content)
+
+        processed_content = []
+        for operation in content:
+            op_type = operation.get("operation", "").lower()
+            if op_type in ["click", "double_click", "right_click", "middle_click"]:
+                label = operation.get("label")
+                coordinates = get_label_coordinates(label, label_coordinates)
+                image = Image.open(io.BytesIO(base64.b64decode(img_base64)))
+                image_size = image.size
+                click_position_percent = get_click_position_in_percent(
+                    coordinates, image_size
+                )
+                if not click_position_percent:
+                    print(
+                        f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] Failed to get {op_type} position for {label}.{ANSI_RESET}"
+                    )
+                    break
+                operation["x"] = click_position_percent[0]
+                operation["y"] = click_position_percent[1]
+                processed_content.append(operation)
+            else:
+                processed_content.append(operation)
+
+        return processed_content
+
+    except Exception as e:
+        print(
+            f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_BRIGHT_MAGENTA}[{raw_model}] Error: {e} {ANSI_RESET}"
+        )
+        if config.verbose:
+            traceback.print_exc()
+        return [{"operation": "done", "summary": f"Execution halted due to error: {e}"}]

@@ -31,13 +31,54 @@ https://github.com/OthersideAI/self-operating-computer/assets/42594239/9e8abc96-
 
 1. **Install the project**
 ```
-pip install self-operating-computer
+pip install -r requirements.txt
+pip install -e .
 ```
-2. **Run the project**
+
+2. **Launch the Desktop GUI (Studio + Floating Overlay Bar)**
+```
+operate --gui
+# or directly:
+operate-gui
+```
+
+3. **Or run via Terminal CLI**
 ```
 operate
+# Or with any custom OpenAI-compatible model:
+operate -m anthropic/claude-3.5-sonnet
 ```
-3. **Enter your OpenAI Key**: If you don't have one, you can obtain an OpenAI key [here](https://platform.openai.com/account/api-keys). If you need you change your key at a later point, run `vim .env` to open the `.env` and replace the old key. 
+
+4. **Connect Any Custom API Endpoint & Model (`.env`)**
+You can connect **any custom OpenAI-compatible vision model** (OpenRouter, vLLM, Ollama, LM Studio, Groq, Together AI):
+```ini
+OPENAI_API_BASE_URL="https://openrouter.ai/api/v1" # or http://localhost:11434/v1
+OPENAI_API_KEY="your-custom-key-or-dummy-for-local"
+OPENAI_MODEL_NAME="deepseek-ai/deepseek-vl"
+```
+* **Grounding Mode Suffixes**:
+  - `operate -m <model-name>` ➔ Defaults to **EasyOCR** text element resolution.
+  - `operate -m <model-name>-som` ➔ **Set-of-Mark** (YOLOv8 visual bounding boxes).
+  - `operate -m <model-name>-direct` ➔ **Direct screen coordinates**.
+
+5. **Connect OmniRoute Local AI Gateway (`.env`)**
+You can connect your local **OmniRoute** gateway (`http://127.0.0.1:20128/v1`) with full multimodal support:
+```ini
+OPENAI_API_BASE_URL="http://127.0.0.1:20128/v1"
+OPENAI_API_KEY="sk-b6fe217dd1fbeeda-18f222-7107776b"
+OPENAI_MODEL_NAME="agy/gemini-3.7-flash-low"
+```
+And run:
+```bash
+operate -m agy/gemini-3.7-flash-low-direct
+```
+
+6. **Automatic 503 & Rate Limit Retry Engine**
+All API completions are protected by an automatic exponential backoff retry handler with jitter:
+- Automatically recovers from **HTTP 503** ("The model is overloaded. Please try again later.") and **429** rate limit spikes.
+- Configurable via `.env`: `OPERATE_MAX_RETRIES=5`, `OPERATE_RETRY_BASE_DELAY=2.0`, `OPERATE_RETRY_MAX_DELAY=60.0`.
+
+7. **Enter your OpenAI Key**: If you don't have one, you can obtain an OpenAI key [here](https://platform.openai.com/account/api-keys). If you need to change your key at a later point, run `vim .env` to open the `.env` and replace the old key. 
 
 <div align="center">
   <img src="https://github.com/OthersideAI/self-operating-computer/blob/main/readme/key.png" width="300"  style="margin: 10px;"/>

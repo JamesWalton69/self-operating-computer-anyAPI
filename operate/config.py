@@ -1,11 +1,20 @@
 import os
 import sys
 
-import google.generativeai as genai
+genai = None
+
+try:
+    from ollama import Client as OllamaClient
+except ImportError:
+    OllamaClient = None
+
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
+
 from dotenv import load_dotenv
-from ollama import Client
 from openai import OpenAI
-import anthropic
 from prompt_toolkit.shortcuts import input_dialog
 
 
@@ -46,10 +55,27 @@ class Config:
         self.qwen_api_key = (
             None  # instance variables are backups in case saving to a `.env` fails
         )
+        self.custom_model_name = os.getenv("OPENAI_MODEL_NAME", "gemini-3.1-flash-lite")
+        self._google_oauth = None
+
+    @property
+    def google_oauth(self):
+        """Lazy-initialized Google OAuth manager singleton."""
+        if self._google_oauth is None:
+            try:
+                from operate.utils.google_auth import GoogleOAuthManager
+                self._google_oauth = GoogleOAuthManager()
+            except Exception as e:
+                print(f"[Config] Google OAuth init failed: {e}")
+                return None
+        return self._google_oauth
 
     def initialize_openai(self):
         if self.verbose:
             print("[Config][initialize_openai]")
+
+        base_url = os.getenv("OPENAI_API_BASE_URL", None)
+        is_local = base_url and ("localhost" in base_url or "127.0.0.1" in base_url)
 
         if self.openai_api_key:
             if self.verbose:
@@ -61,12 +87,14 @@ class Config:
                     "[Config][initialize_openai] no cached openai_api_key, try to get from env."
                 )
             api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key and is_local:
+                api_key = "none"
 
-        client = OpenAI(
-            api_key=api_key,
-        )
-        client.api_key = api_key
-        client.base_url = os.getenv("OPENAI_API_BASE_URL", client.base_url)
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url.strip()
+
+        client = OpenAI(**client_kwargs)
         return client
 
     def initialize_qwen(self):
@@ -93,6 +121,13 @@ class Config:
         return client
 
     def initialize_google(self):
+        global genai
+        if genai is None:
+            try:
+                import google.generativeai as genai
+            except ImportError:
+                raise ImportError("Please install google-generativeai using 'pip install google-generativeai'")
+
         if self.google_api_key:
             if self.verbose:
                 print("[Config][initialize_google] using cached google_api_key")
@@ -118,7 +153,9 @@ class Config:
                     "[Config][initialize_ollama] no cached ollama host. Assuming ollama running locally."
                 )
             self.ollama_host = os.getenv("OLLAMA_HOST", None)
-        model = Client(host=self.ollama_host)
+        if OllamaClient is None:
+            raise ImportError("Please install ollama using 'pip install ollama'")
+        model = OllamaClient(host=self.ollama_host)
         return model
 
     def initialize_anthropic(self):
@@ -132,15 +169,26 @@ class Config:
         """
         Validate the input parameters for the dialog operation.
         """
+        base_url = os.getenv("OPENAI_API_BASE_URL", "")
+        is_local = "localhost" in base_url or "127.0.0.1" in base_url
+        if is_local and not os.environ.get("OPENAI_API_KEY"):
+            os.environ["OPENAI_API_KEY"] = "none"
+            self.openai_api_key = "none"
+
+        is_builtin_non_openai = model in [
+            "gemini-pro-vision",
+            "claude-3",
+            "qwen-vl",
+            "llava",
+        ]
+
+        # Require OpenAI API key for OpenAI models and any custom models unless local
+        is_openai_or_custom = not is_builtin_non_openai or voice_mode
+
         self.require_api_key(
             "OPENAI_API_KEY",
-            "OpenAI API key",
-            model == "gpt-4"
-            or voice_mode
-            or model == "gpt-4-with-som"
-            or model == "gpt-4-with-ocr"
-            or model == "gpt-4.1-with-ocr"
-            or model == "o1-with-ocr",
+            "OpenAI (or custom OpenAI-compatible) API key",
+            is_openai_or_custom,
         )
         self.require_api_key(
             "GOOGLE_API_KEY", "Google API key", model == "gemini-pro-vision"

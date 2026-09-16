@@ -29,23 +29,37 @@ def get_text_element(result, search_text, image_path):
         if not os.path.exists(ocr_dir):
             os.makedirs(ocr_dir)
 
-        # Open the original image
-        image = Image.open(image_path)
-        draw = ImageDraw.Draw(image)
+        # Open the image if path, or copy if image/array
+        image = None
+        try:
+            if isinstance(image_path, str) and os.path.exists(image_path):
+                image = Image.open(image_path)
+                image.load()
+            elif isinstance(image_path, Image.Image):
+                image = image_path.copy()
+            elif hasattr(image_path, "shape"):
+                image = Image.fromarray(image_path)
+            if image:
+                draw = ImageDraw.Draw(image)
+        except Exception:
+            image = None
 
     found_index = None
+    search_clean = (search_text or "").strip().lower()
     for index, element in enumerate(result):
-        text = element[1]
+        text = str(element[1])
         box = element[0]
 
-        if config.verbose:
+        if config.verbose and image:
             # Draw bounding box in blue
             draw.polygon([tuple(point) for point in box], outline="blue")
 
-        if search_text in text:
+        text_clean = text.strip().lower()
+        if search_clean and (search_clean in text_clean or text_clean in search_clean):
             found_index = index
             if config.verbose:
                 print("[get_text_element][loop] found search_text, index:", index)
+            break
 
     if found_index is not None:
         if config.verbose:
@@ -57,8 +71,18 @@ def get_text_element(result, search_text, image_path):
             ocr_image_path = os.path.join(ocr_dir, f"ocr_image_{datetime_str}.png")
             image.save(ocr_image_path)
             print("[get_text_element] OCR image saved at:", ocr_image_path)
+            try:
+                image.close()
+            except Exception:
+                pass
 
         return found_index
+
+    if config.verbose:
+        try:
+            image.close()
+        except Exception:
+            pass
 
     raise Exception("The text element was not found in the image")
 
@@ -89,9 +113,22 @@ def get_text_coordinates(result, index, image_path):
     center_x = (min_x + max_x) / 2
     center_y = (min_y + max_y) / 2
 
-    # Get image dimensions
-    with Image.open(image_path) as img:
-        width, height = img.size
+    # Get image dimensions from path, PIL Image, numpy array, or fallback
+    width, height = None, None
+    try:
+        if isinstance(image_path, str) and os.path.exists(image_path):
+            with Image.open(image_path) as img:
+                width, height = img.size
+        elif hasattr(image_path, "size"):
+            width, height = image_path.size
+        elif hasattr(image_path, "shape"):
+            height, width = image_path.shape[:2]
+    except Exception:
+        pass
+
+    if not width or not height:
+        import pyautogui
+        width, height = pyautogui.size()
 
     # Convert to percentages
     percent_x = round((center_x / width), 3)
