@@ -1,233 +1,183 @@
-ome
-<h1 align="center">Self-Operating Computer Framework</h1>
+<h1 align="center">⚡ Self-Operating Computer (anyAPI + Studio GUI)</h1>
 
 <p align="center">
-  <strong>A framework to enable multimodal models to operate a computer.</strong>
+  <strong>An autonomous framework enabling multimodal AI models to operate computers with human-like vision and actions.</strong>
 </p>
+
 <p align="center">
-  Using the same inputs and outputs as a human operator, the model views the screen and decides on a series of mouse and keyboard actions to reach an objective. Released Nov 2023, the Self-Operating Computer Framework was one of the first examples of full computer-use. 
+  Using the same inputs and outputs as a human operator, the AI views your screen, thinks through the visual layout, and executes native mouse and keyboard actions to achieve your objective.
 </p>
 
 <div align="center">
-  <img src="https://github.com/OthersideAI/self-operating-computer/blob/main/readme/self-operating-computer.png" width="750"  style="margin: 10px;"/>
+  <img src="https://github.com/OthersideAI/self-operating-computer/blob/main/readme/self-operating-computer.png" width="750" style="margin: 10px; border-radius: 8px;" />
 </div>
 
-<!--
-:rotating_light: **OUTAGE NOTIFICATION: gpt-4o**
-**This model is currently experiencing an outage so the self-operating computer may not work as expected.**
--->
+---
 
+## 🌟 Key Highlights & Modern Features
 
-## Key Features
-- **Compatibility**: Designed for various multimodal models.
-- **Integration**: Currently integrated with **GPT-4o, GPT-4.1, o1, Gemini Pro Vision, Claude 3, Qwen-VL and LLaVa.**
-- **Future Plans**: Support for additional models.
+- 🖥️ **Desktop Studio GUI**: Comprehensive dark-themed dashboard to select providers, models, visual grounding modes, prompts, and view live colored action logs.
+- 💊 **Floating Mini Overlay**: Borderless, semi-transparent status pill that stays on top during execution, showing real-time thoughts, current step progress, and an emergency **Stop** button.
+- 🌐 **Universal Custom AnyAPI Support**: Connect **any** OpenAI-compatible API endpoint (OmniRoute, OpenRouter, vLLM, Ollama, LM Studio, Groq, Together AI, DeepSeek, Claude, Google Gemini, Qwen).
+- 🔑 **Google Code Assist OAuth**: Browser-based OAuth 2.0 authentication powered by Google's Code Assist service for seamless multimodal Gemini execution.
+- ⚡ **Multi-Action Operating System Engine**: Supports left click, double click, right click, middle click, fast typing, clipboard pasting, smooth mouse dragging, mouse wheel scrolling, explicit waiting, and application launching (`launch notepad`).
+- 🛡️ **Automatic 503 & Rate Limit Recovery**: Built-in exponential backoff retry engine with jitter that automatically recovers from server busy (`503`) and rate limit (`429`) errors.
+- 🎯 **Flexible Grounding Modes**:
+  - **Direct Vision Coordinates** (`-direct`): Native multimodal pixel estimation for fast response times.
+  - **EasyOCR Element Targeting** (`-ocr`): Automatically maps text on screen to exact pixel coordinates.
+  - **Set-of-Mark Prompting** (`-som`): YOLOv8-powered bounding box tagging.
 
-## Demo
-https://github.com/OthersideAI/self-operating-computer/assets/42594239/9e8abc96-c76a-46fb-9b13-03678b3c67e0
+---
 
+## 🚀 Quick Start
 
-## Run `Self-Operating Computer`
+### 1. Installation
 
-1. **Install the project**
-```
+Clone the repository and install requirements in your Python environment:
+
+```bash
+git clone https://github.com/JamesWalton69/self-operating-computer-anyAPI.git
+cd self-operating-computer-anyAPI
+
+# Install dependencies
 pip install -r requirements.txt
 pip install -e .
 ```
 
-2. **Launch the Desktop GUI (Studio + Floating Overlay Bar)**
-```
+### 2. Launch the Desktop Studio GUI
+
+Run the GUI with any of the following methods:
+
+**On Windows:**
+Double-click `run_studio.bat`, or run:
+```bash
 operate --gui
 # or directly:
 operate-gui
 ```
 
-3. **Or run via Terminal CLI**
+**Via Python module:**
+```bash
+python -m operate.gui.app
 ```
+
+---
+
+## 💻 Terminal CLI Usage
+
+You can also run directly from the command line:
+
+```bash
+# Interactive mode (prompts for objective)
 operate
-# Or with any custom OpenAI-compatible model:
-operate -m anthropic/claude-3.5-sonnet
+
+# Direct prompt execution
+operate --prompt "Open Notepad and type Hello World"
+
+# Specific model
+operate -m agy/gemini-3.7-flash-low-direct --prompt "Search for AI news on Google Chrome"
 ```
 
-4. **Connect Any Custom API Endpoint & Model (`.env`)**
-You can connect **any custom OpenAI-compatible vision model** (OpenRouter, vLLM, Ollama, LM Studio, Groq, Together AI):
-```ini
-OPENAI_API_BASE_URL="https://openrouter.ai/api/v1" # or http://localhost:11434/v1
-OPENAI_API_KEY="your-custom-key-or-dummy-for-local"
-OPENAI_MODEL_NAME="deepseek-ai/deepseek-vl"
-```
-* **Grounding Mode Suffixes**:
-  - `operate -m <model-name>` ➔ Defaults to **EasyOCR** text element resolution.
-  - `operate -m <model-name>-som` ➔ **Set-of-Mark** (YOLOv8 visual bounding boxes).
-  - `operate -m <model-name>-direct` ➔ **Direct screen coordinates**.
+---
 
-5. **Connect OmniRoute Local AI Gateway (`.env`)**
-You can connect your local **OmniRoute** gateway (`http://127.0.0.1:20128/v1`) with full multimodal support:
+## ⚙️ Configuration & Custom Providers (`.env`)
+
+Configure your environment variables in `.env` or set them directly in the Studio GUI:
+
+### Local OmniRoute AI Gateway (`localhost:20128`)
 ```ini
 OPENAI_API_BASE_URL="http://127.0.0.1:20128/v1"
 OPENAI_API_KEY="sk-b6fe217dd1fbeeda-18f222-7107776b"
 OPENAI_MODEL_NAME="agy/gemini-3.7-flash-low"
 ```
-And run:
+Run with:
 ```bash
 operate -m agy/gemini-3.7-flash-low-direct
 ```
 
-6. **Automatic 503 & Rate Limit Retry Engine**
-All API completions are protected by an automatic exponential backoff retry handler with jitter:
-- Automatically recovers from **HTTP 503** ("The model is overloaded. Please try again later.") and **429** rate limit spikes.
-- Configurable via `.env`: `OPERATE_MAX_RETRIES=5`, `OPERATE_RETRY_BASE_DELAY=2.0`, `OPERATE_RETRY_MAX_DELAY=60.0`.
-
-7. **Enter your OpenAI Key**: If you don't have one, you can obtain an OpenAI key [here](https://platform.openai.com/account/api-keys). If you need to change your key at a later point, run `vim .env` to open the `.env` and replace the old key. 
-
-<div align="center">
-  <img src="https://github.com/OthersideAI/self-operating-computer/blob/main/readme/key.png" width="300"  style="margin: 10px;"/>
-</div>
-
-4. **Give Terminal app the required permissions**: As a last step, the Terminal app will ask for permission for "Screen Recording" and "Accessibility" in the "Security & Privacy" page of Mac's "System Preferences".
-
-<div align="center">
-  <img src="https://github.com/OthersideAI/self-operating-computer/blob/main/readme/terminal-access-1.png" width="300"  style="margin: 10px;"/>
-  <img src="https://github.com/OthersideAI/self-operating-computer/blob/main/readme/terminal-access-2.png" width="300"  style="margin: 10px;"/>
-</div>
-
-## Using `operate` Modes
-
-#### OpenAI models
-
-The default model for the project is gpt-4o which you can use by simply typing `operate`. To try running OpenAI's new `o1` model, use the command below.
-
-```
-operate -m o1-with-ocr
+### OpenRouter
+```ini
+OPENAI_API_BASE_URL="https://openrouter.ai/api/v1"
+OPENAI_API_KEY="sk-or-v1-your-openrouter-key"
+OPENAI_MODEL_NAME="anthropic/claude-3.5-sonnet"
 ```
 
-To experiment with OpenAI's latest `gpt-4.1` model, run:
+### Local Ollama / LM Studio / vLLM
+```ini
+# Ollama
+OPENAI_API_BASE_URL="http://localhost:11434/v1"
+OPENAI_API_KEY="ollama"
+OPENAI_MODEL_NAME="llava"
 
-```
-operate -m gpt-4.1-with-ocr
-```
-
-
-### Multimodal Models  `-m`
-Try Google's `gemini-pro-vision` by following the instructions below. Start `operate` with the Gemini model
-```
-operate -m gemini-pro-vision
-```
-
-**Enter your Google AI Studio API key when terminal prompts you for it** If you don't have one, you can obtain a key [here](https://makersuite.google.com/app/apikey) after setting up your Google AI Studio account. You may also need [authorize credentials for a desktop application](https://ai.google.dev/palm_docs/oauth_quickstart). It took me a bit of time to get it working, if anyone knows a simpler way, please make a PR.
-
-#### Try Claude `-m claude-3`
-Use Claude 3 with Vision to see how it stacks up to GPT-4-Vision at operating a computer. Navigate to the [Claude dashboard](https://console.anthropic.com/dashboard) to get an API key and run the command below to try it. 
-
-```
-operate -m claude-3
+# LM Studio
+OPENAI_API_BASE_URL="http://localhost:1234/v1"
+OPENAI_API_KEY="lm-studio"
 ```
 
-#### Try qwen `-m qwen-vl`
-Use Qwen-vl with Vision to see how it stacks up to GPT-4-Vision at operating a computer. Navigate to the [Qwen dashboard](https://bailian.console.aliyun.com/) to get an API key and run the command below to try it. 
-
-```
-operate -m qwen-vl
-```
-
-#### Try LLaVa Hosted Through Ollama `-m llava`
-If you wish to experiment with the Self-Operating Computer Framework using LLaVA on your own machine, you can with Ollama!   
-*Note: Ollama currently only supports MacOS and Linux. Windows now in Preview*   
-
-First, install Ollama on your machine from https://ollama.ai/download.   
-
-Once Ollama is installed, pull the LLaVA model:
-```
-ollama pull llava
-```
-This will download the model on your machine which takes approximately 5 GB of storage.   
-
-When Ollama has finished pulling LLaVA, start the server:
-```
-ollama serve
+### Google Gemini (Direct API & OAuth)
+```ini
+GOOGLE_API_KEY="your-google-ai-studio-key"
+# Or activate Google Code Assist OAuth:
+GEMINI_OAUTH="1"
 ```
 
-That's it! Now start `operate` and select the LLaVA model:
-```
-operate -m llava
-```   
-**Important:** Error rates when using LLaVA are very high. This is simply intended to be a base to build off of as local multimodal models improve over time.
+---
 
-Learn more about Ollama at its [GitHub Repository](https://www.github.com/ollama/ollama)
+## 🎯 Grounding Mode Suffixes
 
-### Voice Mode `--voice`
-The framework supports voice inputs for the objective. Try voice by following the instructions below. 
-**Clone the repo** to a directory on your computer:
-```
-git clone https://github.com/OthersideAI/self-operating-computer.git
-```
-**Cd into directory**:
-```
-cd self-operating-computer
-```
-Install the additional `requirements-audio.txt`
-```
+Add a suffix to any model identifier to control how coordinates are derived:
+
+| Suffix | Mode | Description |
+| :--- | :--- | :--- |
+| `*-direct` | **Direct Coordinates** *(Recommended)* | The model outputs normalized screen percentages directly. Fastest and lowest token footprint. |
+| `*-ocr` | **OCR Text Grounding** | The model identifies text to click; EasyOCR resolves the bounding box on screen. |
+| `*-som` | **Set-of-Mark (YOLOv8)** | YOLOv8 visually overlays bounding boxes and numbered markers on the screenshot. |
+
+---
+
+## 🛡️ Robust Retry Engine
+
+All model requests automatically route through an exponential backoff retry handler to prevent failed jobs during provider surges:
+
+- **Handled Statuses**: `503 Service Unavailable` / `Model Overloaded`, `429 Too Many Requests`, `502 Bad Gateway`, `504 Gateway Timeout`.
+- **Configurable Settings** in `.env`:
+  ```ini
+  OPERATE_MAX_RETRIES=5
+  OPERATE_RETRY_BASE_DELAY=2.0
+  OPERATE_RETRY_MAX_DELAY=60.0
+  ```
+
+---
+
+## 🎙️ Optional Voice Mode (`--voice`)
+
+Control your computer with your voice using Whisper:
+
+```bash
 pip install -r requirements-audio.txt
-```
-**Install device requirements**
-For mac users:
-```
-brew install portaudio
-```
-For Linux users:
-```
-sudo apt install portaudio19-dev python3-pyaudio
-```
-Run with voice mode
-```
 operate --voice
 ```
 
-### Optical Character Recognition Mode `-m gpt-4-with-ocr`
-The Self-Operating Computer Framework now integrates Optical Character Recognition (OCR) capabilities with the `gpt-4-with-ocr` mode. This mode gives GPT-4 a hash map of clickable elements by coordinates. GPT-4 can decide to `click` elements by text and then the code references the hash map to get the coordinates for that element GPT-4 wanted to click. 
+*Note: Requires `portaudio` on macOS (`brew install portaudio`) or Ubuntu/Debian (`sudo apt install portaudio19-dev python3-pyaudio`).*
 
-Based on recent tests, OCR performs better than `som` and vanilla GPT-4 so we made it the default for the project. To use the OCR mode you can simply write: 
+---
 
- `operate` or `operate -m gpt-4-with-ocr` will also work. 
+## 🖥️ Platform Compatibility
 
-### Set-of-Mark Prompting `-m gpt-4-with-som`
-The Self-Operating Computer Framework now supports Set-of-Mark (SoM) Prompting with the `gpt-4-with-som` command. This new visual prompting method enhances the visual grounding capabilities of large multimodal models.
+- **Windows 10 / 11**: Fully supported (mss-accelerated screen capture, native Windows mouse/keyboard automation, `run_studio.bat`).
+- **macOS**: Supported (requires Accessibility and Screen Recording permissions in System Preferences).
+- **Linux**: Supported (X11 environment with `scrot` and `xdotool`).
 
-Learn more about SoM Prompting in the detailed arXiv paper: [here](https://arxiv.org/abs/2310.11441).
+---
 
-For this initial version, a simple YOLOv8 model is trained for button detection, and the `best.pt` file is included under `model/weights/`. Users are encouraged to swap in their `best.pt` file to evaluate performance improvements. If your model outperforms the existing one, please contribute by creating a pull request (PR).
+## 🤝 Contributing & Community
 
-Start `operate` with the SoM model
+Contributions, issues, and feature requests are welcomed!
+- See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+- Original project inspired by [OthersideAI/self-operating-computer](https://github.com/OthersideAI/self-operating-computer).
 
-```
-operate -m gpt-4-with-som
-```
+---
 
+## 📄 License
 
-
-## Contributions are Welcomed!:
-
-If you want to contribute yourself, see [CONTRIBUTING.md](https://github.com/OthersideAI/self-operating-computer/blob/main/CONTRIBUTING.md).
-
-## Feedback
-
-For any input on improving this project, feel free to reach out to [Josh](https://twitter.com/josh_bickett) on Twitter. 
-
-## Join Our Discord Community
-
-For real-time discussions and community support, join our Discord server. 
-- If you're already a member, join the discussion in [#self-operating-computer](https://discord.com/channels/877638638001877052/1181241785834541157).
-- If you're new, first [join our Discord Server](https://discord.gg/YqaKtyBEzM) and then navigate to the [#self-operating-computer](https://discord.com/channels/877638638001877052/1181241785834541157).
-
-## Follow HyperWriteAI for More Updates
-
-Stay updated with the latest developments:
-- Follow HyperWriteAI on [Twitter](https://twitter.com/HyperWriteAI).
-- Follow HyperWriteAI on [LinkedIn](https://www.linkedin.com/company/othersideai/).
-
-## Compatibility
-- This project is compatible with Mac OS, Windows, and Linux (with X server installed).
-
-## OpenAI Rate Limiting Note
-The ```gpt-4o``` model is required. To unlock access to this model, your account needs to spend at least \$5 in API credits. Pre-paying for these credits will unlock access if you haven't already spent the minimum \$5.   
-Learn more **[here](https://platform.openai.com/docs/guides/rate-limits?context=tier-one)**
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
