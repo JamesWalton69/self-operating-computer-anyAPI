@@ -1,10 +1,13 @@
 import os
 import platform
+import queue
 import subprocess
 import tempfile
+import threading
 import time
 import pyautogui
 from PIL import Image, ImageDraw, ImageGrab
+
 try:
     import Xlib.display
     import Xlib.X
@@ -14,12 +17,177 @@ except ImportError:
 
 
 _LATEST_SCREENSHOT = None
+_SAVE_QUEUE = queue.Queue()
+_WORKER_THREAD = None
+_WORKER_LOCK = threading.Lock()
+
+
+def _ensure_worker():
+    """Ensure the background disk save worker thread is running."""
+    global _WORKER_THREAD
+    with _WORKER_LOCK:
+        if _WORKER_THREAD is None or not _WORKER_THREAD.is_alive():
+            _WORKER_THREAD = threading.Thread(
+                target=_disk_save_worker, name="ScreenshotSaveWorker", daemon=True
+            )
+            _WORKER_THREAD.start()
+
+
+def _write_image_to_disk(img, target_path):
+    """Write an image to disk safely, handling directories and atomic replaces."""
+    try:
+        if not os.path.isabs(target_path):
+            target_path = os.path.abspath(target_path)
+
+        dir_name = os.path.dirname(target_path)
+        if dir_name and not os.path.exists(dir_name):
+            os.makedirs(dir_name, exist_ok=True)
+
+        temp_path = f"{target_path}.tmp.{os.getpid()}_{int(time.time() * 1000)}"
+        try:
+            img.save(temp_path, format="PNG")
+            try:
+                os.replace(temp_path, target_path)
+            except Exception:
+                # If replace fails on Windows due to file lock, fallback to direct save
+                img.save(target_path, format="PNG")
+        except Exception:
+            img.save(target_path)
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _disk_save_worker():
+    """Background worker that continuously writes queued screenshots to disk."""
+    while True:
+        try:
+            item = _SAVE_QUEUE.get()
+            if item is None:
+                _SAVE_QUEUE.task_done()
+                break
+            img, target_path = item
+            _write_image_to_disk(img, target_path)
+        except Exception:
+            pass
+        finally:
+            _SAVE_QUEUE.task_done()
+
+
+def _save_to_disk_async(img, file_path=None):
+    """Background disk write — doesn't block the hot path.
+    Enqueues the image to a background worker queue."""
+    if img is None:
+        return
+    if file_path is None:
+        file_path = os.path.join("screenshots", "screenshot.png")
+
+    _ensure_worker()
+
+    try:
+        img_copy = img.copy()
+    except Exception:
+        img_copy = img
+
+    try:
+        _SAVE_QUEUE.put_nowait((img_copy, file_path))
+    except Exception:
+        try:
+            threading.Thread(
+                target=_write_image_to_disk,
+                args=(img_copy, file_path),
+                daemon=True,
+            ).start()
+        except Exception:
+            pass
+
+
+def flush_screenshot_queue(timeout=2.0):
+    """Wait for all pending screenshot disk saves to complete."""
+    try:
+        deadline = time.time() + timeout
+        while _SAVE_QUEUE.unfinished_tasks > 0 and time.time() < deadline:
+            time.sleep(0.02)
+    except Exception:
+        pass
 
 
 def get_latest_screenshot():
     """Retrieve the most recently captured in-memory screenshot PIL Image."""
     global _LATEST_SCREENSHOT
     return _LATEST_SCREENSHOT
+
+
+def capture_screen_fast(file_path=None):
+    """Capture screen directly to RAM. No disk I/O in the hot path.
+
+    Returns the in-memory PIL Image immediately, and enqueues an asynchronous
+    disk save for GUI thumbnail / caching purposes.
+    """
+    global _LATEST_SCREENSHOT
+    img = None
+    target_path = (
+        file_path
+        if file_path is not None
+        else os.path.join("screenshots", "screenshot.png")
+    )
+
+    # Primary: use mss (fastest, direct memory access)
+    try:
+        import mss
+
+        with mss.mss() as sct:
+            monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+            sct_img = sct.grab(monitor)
+            img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+    except Exception:
+        pass
+
+    # Fallback 1: pyautogui
+    if img is None:
+        try:
+            img = pyautogui.screenshot()
+        except Exception:
+            pass
+
+    # Fallback 2: PIL ImageGrab
+    if img is None:
+        try:
+            img = ImageGrab.grab()
+        except Exception:
+            pass
+
+    # Fallback 3: previous cached screenshot or existing file from disk
+    if img is None:
+        if _LATEST_SCREENSHOT is not None:
+            img = _LATEST_SCREENSHOT
+        else:
+            for fallback_file in [
+                target_path,
+                os.path.join("screenshots", "screenshot.png"),
+            ]:
+                if fallback_file and os.path.exists(fallback_file):
+                    try:
+                        img = Image.open(fallback_file).convert("RGB")
+                        break
+                    except Exception:
+                        pass
+
+    # Fallback 4: blank fallback canvas
+    if img is None:
+        img = Image.new("RGB", (1920, 1080), color=(30, 30, 30))
+
+    _LATEST_SCREENSHOT = img
+
+    # Save to disk in background (for GUI thumbnail only)
+    _save_to_disk_async(img, target_path)
+
+    return img
 
 
 def capture_screen_with_cursor(file_path):
@@ -69,29 +237,13 @@ def capture_screen_with_cursor(file_path):
 
         _LATEST_SCREENSHOT = screenshot
 
-        # 1. Try saving directly to target_path
-        try:
-            if os.path.exists(target_path):
-                try:
-                    os.remove(target_path)
-                except Exception:
-                    pass
-            screenshot.save(target_path)
-            return target_path
-        except Exception:
-            pass
-
-        # 2. Try saving to a timestamped file in the same directory
-        try:
-            base, ext = os.path.splitext(target_path)
-            alt_path = f"{base}_{int(time.time() * 1000)}{ext or '.png'}"
-            screenshot.save(alt_path)
-            return alt_path
-        except Exception:
-            pass
-
-        # 3. If disk writes are blocked by Windows Security/ACLs, return in-memory flag
-        return "IN_MEMORY_SCREENSHOT"
+        # Non-blocking disk write: return immediately so the hot path never waits
+        # on PNG serialization. The file appears atomically via the background
+        # worker; pixel consumers use get_latest_screenshot() or the in-memory
+        # fallback in _encode_image_fast, and callers that read the path
+        # synchronously use flush_screenshot_queue() first.
+        _save_to_disk_async(screenshot, target_path)
+        return target_path
 
     elif user_platform == "Linux":
         # Use xdotool to get the cursor position and Xlib to get the cursor image

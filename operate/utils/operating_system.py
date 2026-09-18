@@ -7,9 +7,14 @@ import subprocess
 import time
 import math
 
+try:
+    import pygetwindow as gw
+except ImportError:
+    gw = None
+
 # Ensure failsafe is globally disabled so mouse in corners doesn't crash automation
 pyautogui.FAILSAFE = False
-pyautogui.PAUSE = 0.05
+pyautogui.PAUSE = 0.01
 
 try:
     import pyperclip
@@ -33,7 +38,7 @@ from operate.utils.misc import convert_percent_to_decimal
 class OperatingSystem:
     def __init__(self):
         pyautogui.FAILSAFE = False
-        pyautogui.PAUSE = 0.05
+        pyautogui.PAUSE = 0.01
 
     def _resolve_click_position(self, click_detail):
         """Convert percentage-based coordinates to pixel coordinates."""
@@ -52,8 +57,8 @@ class OperatingSystem:
         try:
             x_pixel, y_pixel = self._resolve_click_position(click_detail)
             if x_pixel is not None:
-                pyautogui.moveTo(x_pixel, y_pixel, duration=0.12)
-                time.sleep(0.05)
+                pyautogui.moveTo(x_pixel, y_pixel, duration=0.05)
+                time.sleep(0.02)
                 pyautogui.click(x_pixel, y_pixel)
         except Exception as e:
             print(f"[OperatingSystem][mouse] error: {e}")
@@ -64,8 +69,8 @@ class OperatingSystem:
             screen_width, screen_height = pyautogui.size()
             x_pixel = int(screen_width * float(x_percentage))
             y_pixel = int(screen_height * float(y_percentage))
-            pyautogui.moveTo(x_pixel, y_pixel, duration=duration)
-            time.sleep(0.05)
+            pyautogui.moveTo(x_pixel, y_pixel, duration=0.06)
+            time.sleep(0.02)
             pyautogui.click(x_pixel, y_pixel)
         except Exception as e:
             print(f"[OperatingSystem][click_at_percentage] error: {e}")
@@ -75,8 +80,8 @@ class OperatingSystem:
         try:
             x_pixel, y_pixel = self._resolve_click_position(click_detail)
             if x_pixel is not None:
-                pyautogui.moveTo(x_pixel, y_pixel, duration=0.12)
-                time.sleep(0.05)
+                pyautogui.moveTo(x_pixel, y_pixel, duration=0.05)
+                time.sleep(0.02)
                 pyautogui.doubleClick(x_pixel, y_pixel)
         except Exception as e:
             print(f"[OperatingSystem][double_click] error: {e}")
@@ -86,8 +91,8 @@ class OperatingSystem:
         try:
             x_pixel, y_pixel = self._resolve_click_position(click_detail)
             if x_pixel is not None:
-                pyautogui.moveTo(x_pixel, y_pixel, duration=0.12)
-                time.sleep(0.05)
+                pyautogui.moveTo(x_pixel, y_pixel, duration=0.05)
+                time.sleep(0.02)
                 pyautogui.rightClick(x_pixel, y_pixel)
         except Exception as e:
             print(f"[OperatingSystem][right_click] error: {e}")
@@ -97,8 +102,8 @@ class OperatingSystem:
         try:
             x_pixel, y_pixel = self._resolve_click_position(click_detail)
             if x_pixel is not None:
-                pyautogui.moveTo(x_pixel, y_pixel, duration=0.12)
-                time.sleep(0.05)
+                pyautogui.moveTo(x_pixel, y_pixel, duration=0.05)
+                time.sleep(0.02)
                 pyautogui.middleClick(x_pixel, y_pixel)
         except Exception as e:
             print(f"[OperatingSystem][middle_click] error: {e}")
@@ -214,7 +219,7 @@ class OperatingSystem:
                     screen_width, screen_height = pyautogui.size()
                     px = int(screen_width * float(x_dec))
                     py = int(screen_height * float(y_dec))
-                    pyautogui.moveTo(px, py, duration=0.1)
+                    pyautogui.moveTo(px, py, duration=0.03)
 
             pyautogui.scroll(scroll_amount)
         except Exception as e:
@@ -335,8 +340,19 @@ class OperatingSystem:
                 subprocess.Popen(["open", "-a", target])
             else:
                 subprocess.Popen([target])
-            # Give app time to paint and gain window focus
-            time.sleep(2.0)
+            # Give app time to paint and gain window focus - poll for window presence
+            try:
+                if gw is not None:
+                    deadline = time.monotonic() + 3.0
+                    while time.monotonic() < deadline:
+                        if gw.getActiveWindow():
+                            time.sleep(0.15)
+                            break
+                        time.sleep(0.05)
+                else:
+                    time.sleep(0.5)
+            except Exception:
+                time.sleep(0.5)
         except Exception as e:
             print(f"[OperatingSystem][launch] error: {e}")
 

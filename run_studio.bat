@@ -1,26 +1,22 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0" 2>nul
 
 echo ====================================================
 echo   Starting Self-Operating Computer Studio GUI
 echo ====================================================
 echo.
 
-if not exist ".venv\Scripts\python.exe" (
-    echo [ERROR] Virtual environment not found at .venv
+if not exist "%~dp0.venv\Scripts\python.exe" (
+    echo [ERROR] Virtual environment not found at %~dp0.venv
     echo Please ensure the virtualenv is installed.
-    pause
     exit /b 1
 )
 
-set PYTHONPATH=%CD%
-echo Using Python: %CD%\.venv\Scripts\python.exe
+set "PYTHONPATH=%~dp0;%PYTHONPATH%"
+echo Using Python: %~dp0.venv\Scripts\python.exe
 echo.
-"%CD%\.venv\Scripts\python.exe" -m operate --gui %*
 
-if %ERRORLEVEL% neq 0 (
-    echo.
-    echo [NOTICE] Studio exited with code %ERRORLEVEL%.
-    pause
-)
+:: Running with stdin redirected from NUL completely prevents "Terminate batch job (Y/N)?"
+call "%~dp0.venv\Scripts\python.exe" -m operate --gui %* <nul
+exit /b %ERRORLEVEL%

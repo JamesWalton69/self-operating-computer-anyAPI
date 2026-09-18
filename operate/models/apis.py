@@ -1,4 +1,5 @@
 import base64
+import concurrent.futures
 import io
 import json
 import os
@@ -35,7 +36,12 @@ from operate.utils.label import (
 )
 from operate.utils.ocr import get_text_coordinates, get_text_element
 from operate.utils.retry import call_with_retry
-from operate.utils.screenshot import capture_screen_with_cursor, compress_screenshot
+from operate.utils.screenshot import (
+    capture_screen_with_cursor,
+    capture_screen_fast,
+    compress_screenshot,
+    flush_screenshot_queue,
+)
 from operate.utils.style import ANSI_BRIGHT_MAGENTA, ANSI_GREEN, ANSI_RED, ANSI_RESET
 
 # Load configuration
@@ -54,6 +60,63 @@ def get_ocr_reader():
                 raise ImportError("Please install easyocr using 'pip install easyocr'")
         _OCR_READER = easyocr.Reader(["en"])
     return _OCR_READER
+
+
+_OCR_EXECUTOR = None
+
+
+def _readtext_safe(screenshot_filename):
+    """Run EasyOCR readtext, never raising into the hot path."""
+    try:
+        return get_ocr_reader().readtext(screenshot_filename)
+    except Exception:
+        return None
+
+
+def start_ocr_readtext(screenshot_filename):
+    """Kick off OCR immediately so it runs in parallel with the LLM call.
+
+    Returns a zero-arg callable that yields the OCR result when needed. Calling it
+    blocks until OCR finishes; since the LLM network call is the bottleneck, the
+    OCR cost is hidden behind it.
+    """
+    global _OCR_EXECUTOR
+    try:
+        if _OCR_EXECUTOR is None:
+            _OCR_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = _OCR_EXECUTOR.submit(_readtext_safe, screenshot_filename)
+        return lambda: future.result()
+    except Exception:
+        result = _readtext_safe(screenshot_filename)
+        return lambda: result
+
+
+_YOLO_MODEL = None
+
+
+def get_yolo_model():
+    """Load the SoM YOLO label model once and cache it (saves 0.5-1.5s per step)."""
+    global _YOLO_MODEL, YOLO
+    if _YOLO_MODEL is None:
+        if YOLO is None:
+            try:
+                from ultralytics import YOLO
+            except ImportError:
+                raise ImportError(
+                    "Please install ultralytics using 'pip install ultralytics'"
+                )
+        _YOLO_MODEL = YOLO(
+            pkg_resources.resource_filename("operate.models.weights", "best.pt")
+        )
+    return _YOLO_MODEL
+
+
+_INITIALIZED_SESSIONS = set()
+
+
+def reset_prompt_context():
+    """Clear session cache so that next execution restarts prompt schema afresh."""
+    _INITIALIZED_SESSIONS.clear()
 
 
 async def get_next_action(model, messages, objective, session_id):
@@ -88,6 +151,50 @@ async def get_next_action(model, messages, objective, session_id):
         operation = await call_claude_3_with_ocr(messages, objective, model)
         return operation, None
 
+    # --- Gemini OAuth route (Direct Google Antigravity / Cloud Code) ---
+    if os.getenv("GEMINI_OAUTH") == "1":
+        from operate.auth_gemini import gemini_generate_operations
+
+        confirm_system_prompt(messages, objective, model)
+
+        screenshot_img = capture_screen_fast()
+
+        session_key = (model, objective)
+        if len(messages) == 1 or session_key not in _INITIALIZED_SESSIONS:
+            user_prompt = get_user_first_message_prompt()
+            system_prompt = messages[0]["content"]
+            full_prompt = f"{system_prompt}\n\n{user_prompt}"
+            _INITIALIZED_SESSIONS.add(session_key)
+        else:
+            user_prompt = get_user_prompt()
+            # On subsequent steps, do NOT send the massive 150-line system prompt again!
+            full_prompt = (
+                f"Objective: {objective}\n\n"
+                f"{user_prompt}\n\n"
+                f"Reminder: Respond ONLY with a valid JSON array of action objects matching the required schema."
+            )
+
+        # Pass PIL Image directly — gemini_generate() handles compression via _encode_image_fast
+        images = [screenshot_img] if screenshot_img else None
+
+        # Strip grounding suffix and routing prefixes for Google API
+        raw_model = model
+        for suffix in ["-direct", "-with-som", "-som", "-with-ocr", "-ocr"]:
+            raw_model = raw_model.replace(suffix, "")
+        if "/" in raw_model:
+            raw_model = raw_model.split("/")[-1]
+
+        operations = gemini_generate_operations(
+            prompt=full_prompt,
+            images=images,
+            model=raw_model or "gemini-2.5-pro",
+        )
+
+        # Record in message history for context tracking
+        assistant_message = {"role": "assistant", "content": json.dumps(operations)}
+        messages.append(assistant_message)
+        return operations, None
+
     # Custom model handling for any arbitrary model name or custom OpenAI-compatible endpoint
     raw_model = model
     targeting_mode = "direct"  # Default to fast, native multimodal direct vision
@@ -119,18 +226,12 @@ async def get_next_action(model, messages, objective, session_id):
 def call_gpt_4o(messages):
     if config.verbose:
         print("[call_gpt_4_v]")
-    time.sleep(1)
     client = config.initialize_openai()
     try:
-        screenshots_dir = "screenshots"
-        if not os.path.exists(screenshots_dir):
-            os.makedirs(screenshots_dir)
+        screenshot_img = capture_screen_fast()
+        flush_screenshot_queue()
 
-        screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
-        screenshot_filename = capture_screen_with_cursor(screenshot_filename)
-
-        with open(screenshot_filename, "rb") as img_file:
-            img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+        img_base64 = _encode_image_fast(screenshot_img)
 
         if len(messages) == 1:
             user_prompt = get_user_first_message_prompt()
@@ -143,22 +244,12 @@ def call_gpt_4o(messages):
                 user_prompt,
             )
 
-        vision_message = {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": user_prompt},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
-                },
-            ],
-        }
-        messages.append(vision_message)
+        api_messages = _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64)
 
         response = call_with_retry(
             client.chat.completions.create,
             model="gpt-4o",
-            messages=messages,
+            messages=api_messages,
             presence_penalty=1,
             frequency_penalty=1,
             caller_name="gpt-4o",
@@ -200,7 +291,6 @@ async def call_qwen_vl_with_ocr(messages, objective, model):
 
     # Construct the path to the file within the package
     try:
-        time.sleep(1)
         client = config.initialize_qwen()
 
         confirm_system_prompt(messages, objective, model)
@@ -208,16 +298,12 @@ async def call_qwen_vl_with_ocr(messages, objective, model):
         if not os.path.exists(screenshots_dir):
             os.makedirs(screenshots_dir)
 
-        # Call the function to capture the screen with the cursor
-        raw_screenshot_filename = os.path.join(screenshots_dir, "raw_screenshot.png")
-        capture_screen_with_cursor(raw_screenshot_filename)
+        # Capture directly to RAM and compress for the API
+        screenshot_img = capture_screen_fast()
+        flush_screenshot_queue()
 
-        # Compress screenshot image to make size be smaller
-        screenshot_filename = os.path.join(screenshots_dir, "screenshot.jpeg")
-        compress_screenshot(raw_screenshot_filename, screenshot_filename)
-
-        with open(screenshot_filename, "rb") as img_file:
-            img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+        get_ocr_result = start_ocr_readtext("IN_MEMORY_SCREENSHOT")
+        img_base64 = _encode_image_fast(screenshot_img)
 
         if len(messages) == 1:
             user_prompt = get_user_first_message_prompt()
@@ -235,12 +321,12 @@ async def call_qwen_vl_with_ocr(messages, objective, model):
                 },
             ],
         }
-        messages.append(vision_message)
+        api_messages = _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64)
 
         response = call_with_retry(
             client.chat.completions.create,
             model="qwen2.5-vl-72b-instruct",
-            messages=messages,
+            messages=api_messages,
             caller_name="qwen-vl",
         )
 
@@ -264,10 +350,8 @@ async def call_qwen_vl_with_ocr(messages, objective, model):
                         text_to_click,
                     )
                 # Initialize EasyOCR Reader
-                reader = easyocr.Reader(["en"])
-
-                # Read the screenshot
-                result = reader.readtext(screenshot_filename)
+                # OCR ran concurrently with the LLM call; result is ready
+                result = get_ocr_result()
 
                 text_element_index = get_text_element(
                     result, text_to_click, screenshot_filename
@@ -321,8 +405,6 @@ def call_gemini_pro_vision(messages, objective):
         print(
             "[Self Operating Computer][call_gemini_pro_vision]",
         )
-    # sleep for a second
-    time.sleep(1)
     try:
         screenshots_dir = "screenshots"
         if not os.path.exists(screenshots_dir):
@@ -331,14 +413,13 @@ def call_gemini_pro_vision(messages, objective):
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
         # Call the function to capture the screen with the cursor
         capture_screen_with_cursor(screenshot_filename)
-        # sleep for a second
-        time.sleep(1)
         prompt = get_system_prompt("gemini-pro-vision", objective)
 
         model = config.initialize_google()
         if config.verbose:
             print("[call_gemini_pro_vision] model", model)
 
+        flush_screenshot_queue()
         response = call_with_retry(
             model.generate_content,
             [prompt, Image.open(screenshot_filename)],
@@ -375,7 +456,6 @@ async def call_gpt_4o_with_ocr(messages, objective, model):
 
     # Construct the path to the file within the package
     try:
-        time.sleep(1)
         client = config.initialize_openai()
 
         confirm_system_prompt(messages, objective, model)
@@ -386,30 +466,21 @@ async def call_gpt_4o_with_ocr(messages, objective, model):
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
         screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
-        with open(screenshot_filename, "rb") as img_file:
-            img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+        get_ocr_result = start_ocr_readtext(screenshot_filename)
+
+        img_base64 = _encode_image_fast(screenshot_filename)
 
         if len(messages) == 1:
             user_prompt = get_user_first_message_prompt()
         else:
             user_prompt = get_user_prompt()
 
-        vision_message = {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": user_prompt},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"},
-                },
-            ],
-        }
-        messages.append(vision_message)
+        api_messages = _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64)
 
         response = call_with_retry(
             client.chat.completions.create,
             model="gpt-4o",
-            messages=messages,
+            messages=api_messages,
             caller_name="gpt-4o",
         )
 
@@ -433,10 +504,8 @@ async def call_gpt_4o_with_ocr(messages, objective, model):
                         text_to_click,
                     )
                 # Initialize EasyOCR Reader
-                reader = easyocr.Reader(["en"])
-
-                # Read the screenshot
-                result = reader.readtext(screenshot_filename)
+                # OCR ran concurrently with the LLM call; result is ready
+                result = get_ocr_result()
 
                 text_element_index = get_text_element(
                     result, text_to_click, screenshot_filename
@@ -488,7 +557,6 @@ async def call_gpt_4_1_with_ocr(messages, objective, model):
         print("[call_gpt_4_1_with_ocr]")
 
     try:
-        time.sleep(1)
         client = config.initialize_openai()
 
         confirm_system_prompt(messages, objective, model)
@@ -499,8 +567,9 @@ async def call_gpt_4_1_with_ocr(messages, objective, model):
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
         screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
-        with open(screenshot_filename, "rb") as img_file:
-            img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+        get_ocr_result = start_ocr_readtext(screenshot_filename)
+
+        img_base64 = _encode_image_fast(screenshot_filename)
 
         if len(messages) == 1:
             user_prompt = get_user_first_message_prompt()
@@ -517,12 +586,12 @@ async def call_gpt_4_1_with_ocr(messages, objective, model):
                 },
             ],
         }
-        messages.append(vision_message)
+        api_messages = _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64)
 
         response = call_with_retry(
             client.chat.completions.create,
             model="gpt-4.1",
-            messages=messages,
+            messages=api_messages,
             caller_name="gpt-4.1",
         )
 
@@ -544,9 +613,8 @@ async def call_gpt_4_1_with_ocr(messages, objective, model):
                         "[call_gpt_4_1_with_ocr][click] text_to_click",
                         text_to_click,
                     )
-                reader = easyocr.Reader(["en"])
-
-                result = reader.readtext(screenshot_filename)
+                # OCR ran concurrently with the LLM call; result is ready
+                result = get_ocr_result()
 
                 text_element_index = get_text_element(
                     result, text_to_click, screenshot_filename
@@ -597,7 +665,6 @@ async def call_o1_with_ocr(messages, objective, model):
 
     # Construct the path to the file within the package
     try:
-        time.sleep(1)
         client = config.initialize_openai()
 
         confirm_system_prompt(messages, objective, model)
@@ -608,8 +675,9 @@ async def call_o1_with_ocr(messages, objective, model):
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
         screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
-        with open(screenshot_filename, "rb") as img_file:
-            img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+        get_ocr_result = start_ocr_readtext(screenshot_filename)
+
+        img_base64 = _encode_image_fast(screenshot_filename)
 
         if len(messages) == 1:
             user_prompt = get_user_first_message_prompt()
@@ -626,12 +694,12 @@ async def call_o1_with_ocr(messages, objective, model):
                 },
             ],
         }
-        messages.append(vision_message)
+        api_messages = _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64)
 
         response = call_with_retry(
             client.chat.completions.create,
             model="o1",
-            messages=messages,
+            messages=api_messages,
             caller_name="o1",
         )
 
@@ -655,10 +723,8 @@ async def call_o1_with_ocr(messages, objective, model):
                         text_to_click,
                     )
                 # Initialize EasyOCR Reader
-                reader = easyocr.Reader(["en"])
-
-                # Read the screenshot
-                result = reader.readtext(screenshot_filename)
+                # OCR ran concurrently with the LLM call; result is ready
+                result = get_ocr_result()
 
                 text_element_index = get_text_element(
                     result, text_to_click, screenshot_filename
@@ -706,14 +772,12 @@ async def call_o1_with_ocr(messages, objective, model):
 
 
 async def call_gpt_4o_labeled(messages, objective, model):
-    time.sleep(1)
-
     try:
         client = config.initialize_openai()
 
         confirm_system_prompt(messages, objective, model)
         file_path = pkg_resources.resource_filename("operate.models.weights", "best.pt")
-        yolo_model = YOLO(file_path)  # Load your trained model
+        yolo_model = get_yolo_model()
         screenshots_dir = "screenshots"
         if not os.path.exists(screenshots_dir):
             os.makedirs(screenshots_dir)
@@ -725,6 +789,9 @@ async def call_gpt_4o_labeled(messages, objective, model):
             img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
 
         img_base64_labeled, label_coordinates = add_labels(img_base64, yolo_model)
+
+        # Compress only the labeled OUTPUT for upload; YOLO keeps full resolution
+        img_base64_labeled = _encode_image_from_base64(img_base64_labeled)
 
         if len(messages) == 1:
             user_prompt = get_user_first_message_prompt()
@@ -749,12 +816,12 @@ async def call_gpt_4o_labeled(messages, objective, model):
                 },
             ],
         }
-        messages.append(vision_message)
+        api_messages = _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64_labeled)
 
         response = call_with_retry(
             client.chat.completions.create,
             model="gpt-4o",
-            messages=messages,
+            messages=api_messages,
             presence_penalty=1,
             frequency_penalty=1,
             caller_name="gpt-4o",
@@ -853,7 +920,6 @@ async def call_gpt_4o_labeled(messages, objective, model):
 def call_ollama_llava(messages):
     if config.verbose:
         print("[call_ollama_llava]")
-    time.sleep(1)
     try:
         model = config.initialize_ollama()
         screenshots_dir = "screenshots"
@@ -932,7 +998,6 @@ async def call_claude_3_with_ocr(messages, objective, model):
         print("[call_claude_3_with_ocr]")
 
     try:
-        time.sleep(1)
         client = config.initialize_anthropic()
 
         confirm_system_prompt(messages, objective, model)
@@ -943,34 +1008,10 @@ async def call_claude_3_with_ocr(messages, objective, model):
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
         screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
-        # downsize screenshot due to 5MB size limit
-        with open(screenshot_filename, "rb") as img_file:
-            img = Image.open(img_file)
+        get_ocr_result = start_ocr_readtext(screenshot_filename)
 
-            # Convert RGBA to RGB
-            if img.mode == "RGBA":
-                img = img.convert("RGB")
-
-            # Calculate the new dimensions while maintaining the aspect ratio
-            original_width, original_height = img.size
-            aspect_ratio = original_width / original_height
-            new_width = 2560  # Adjust this value to achieve the desired file size
-            new_height = int(new_width / aspect_ratio)
-            if config.verbose:
-                print("[call_claude_3_with_ocr] resizing claude")
-
-            # Resize the image
-            img_resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-            # Save the resized and converted image to a BytesIO object for JPEG format
-            img_buffer = io.BytesIO()
-            img_resized.save(
-                img_buffer, format="JPEG", quality=85
-            )  # Adjust the quality parameter as needed
-            img_buffer.seek(0)
-
-            # Encode the resized image as base64
-            img_data = base64.b64encode(img_buffer.getvalue()).decode("utf-8")
+        # compress once; keeps payload small on every step
+        img_data = _encode_image_fast(screenshot_filename)
 
         if len(messages) == 1:
             user_prompt = get_user_first_message_prompt()
@@ -995,7 +1036,7 @@ async def call_claude_3_with_ocr(messages, objective, model):
                 },
             ],
         }
-        messages.append(vision_message)
+        api_messages = _prepare_anthropic_messages_with_single_latest_image(messages, vision_message)
 
         # anthropic api expect system prompt as an separate argument
         response = call_with_retry(
@@ -1003,7 +1044,7 @@ async def call_claude_3_with_ocr(messages, objective, model):
             model="claude-3-opus-20240229",
             max_tokens=3000,
             system=messages[0]["content"],
-            messages=messages[1:],
+            messages=api_messages[1:],
             caller_name="claude-3",
         )
 
@@ -1046,10 +1087,8 @@ async def call_claude_3_with_ocr(messages, objective, model):
                         text_to_click,
                     )
                 # Initialize EasyOCR Reader
-                reader = easyocr.Reader(["en"])
-
-                # Read the screenshot
-                result = reader.readtext(screenshot_filename)
+                # OCR ran concurrently with the LLM call; result is ready
+                result = get_ocr_result()
 
                 # limit the text to extract has a higher success rate
                 text_element_index = get_text_element(
@@ -1156,16 +1195,15 @@ def gpt_4_fallback(messages, objective, model):
 
 def confirm_system_prompt(messages, objective, model):
     """
-    On `Exception` we default to `call_gpt_4_vision_preview` so we have this function to reassign system prompt in case of a previous failure
+    Ensure the first message in messages is the system prompt.
+    Only computes and assigns if not already present, avoiding redundant string formatting.
     """
-    if config.verbose:
-        print("[confirm_system_prompt] model", model)
-
-    system_prompt = get_system_prompt(model, objective)
-    new_system_message = {"role": "system", "content": system_prompt}
-    # remove and replace the first message in `messages` with `new_system_message`
-
-    messages[0] = new_system_message
+    if not messages:
+        system_prompt = get_system_prompt(model, objective)
+        messages.append({"role": "system", "content": system_prompt})
+    elif messages[0].get("role") != "system":
+        system_prompt = get_system_prompt(model, objective)
+        messages.insert(0, {"role": "system", "content": system_prompt})
 
     if config.verbose:
         print("[confirm_system_prompt]")
@@ -1208,14 +1246,18 @@ def clean_json(content):
     return content
 
 
-def _encode_image_fast(screenshot_filename):
-    """Load, clamp to max 1920, and encode screenshot as high-quality optimized JPEG (~150KB)."""
+def _encode_image_fast(screenshot_or_image, max_dim=1280, quality=70):
+    """Load, downscale to max_dim, and encode as a small optimized JPEG.
+    Accepts either a file path (str) or a PIL.Image. Aggressive settings keep
+    UI screenshots readable while cutting upload size ~30x."""
     from operate.utils.screenshot import get_latest_screenshot
-    if screenshot_filename == "IN_MEMORY_SCREENSHOT" or not os.path.exists(screenshot_filename):
+    if isinstance(screenshot_or_image, Image.Image):
+        img = screenshot_or_image
+    elif screenshot_or_image == "IN_MEMORY_SCREENSHOT" or not os.path.exists(screenshot_or_image):
         img = get_latest_screenshot()
     else:
         try:
-            img = Image.open(screenshot_filename)
+            img = Image.open(screenshot_or_image)
         except Exception:
             img = get_latest_screenshot()
 
@@ -1225,17 +1267,47 @@ def _encode_image_fast(screenshot_filename):
     if img.mode in ("RGBA", "LA", "P"):
         img = img.convert("RGB")
 
-    # Limit max dimension to 1920 to keep upload lightning fast without losing UI clarity
-    max_dim = 1920
     w, h = img.size
     if max(w, h) > max_dim:
         scale = max_dim / max(w, h)
         img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
 
-    import io
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85, optimize=True)
+    img.save(buf, format="JPEG", quality=quality, optimize=True, subsampling="4:2:0")
     return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def _encode_image_from_base64(img_base64):
+    """Re-encode a base64 image (e.g. a labeled SoM PNG) as a compressed JPEG base64."""
+    try:
+        img = Image.open(io.BytesIO(base64.b64decode(img_base64)))
+        return _encode_image_fast(img)
+    except Exception:
+        return img_base64
+
+
+def _prepare_anthropic_messages_with_single_latest_image(messages, vision_message):
+    """
+    Anthropic-format prune: keep only the LATEST image, replacing older images in
+    conversation history with text placeholders to prevent payload explosion.
+    """
+    clean_messages = []
+    for m in messages:
+        m_copy = dict(m)
+        if isinstance(m_copy.get("content"), list):
+            new_content = []
+            for item in m_copy["content"]:
+                if isinstance(item, dict) and item.get("type") == "image":
+                    new_content.append(
+                        {"type": "text", "text": "[Previous desktop screenshot - action taken]"}
+                    )
+                else:
+                    new_content.append(item)
+            m_copy["content"] = new_content
+        clean_messages.append(m_copy)
+    clean_messages.append(vision_message)
+    messages.append(vision_message)
+    return clean_messages
 
 
 def _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64):
@@ -1442,9 +1514,8 @@ async def call_custom_model_with_som(messages, objective, model, raw_model):
         screenshot_filename = os.path.join(screenshots_dir, "screenshot.png")
         screenshot_filename = capture_screen_with_cursor(screenshot_filename)
 
-        yolo_model = YOLO(
-            pkg_resources.resource_filename("operate.models.weights", "best.pt")
-        )
+        yolo_model = get_yolo_model()
+        flush_screenshot_queue()
         result = yolo_model(screenshot_filename)
         labeled_screenshot_filename = os.path.join(
             screenshots_dir, "labeled_screenshot.png"
@@ -1453,11 +1524,8 @@ async def call_custom_model_with_som(messages, objective, model, raw_model):
             result, screenshot_filename, labeled_screenshot_filename
         )
 
-        with open(labeled_screenshot_filename, "rb") as img_file:
-            img_base64_labeled = base64.b64encode(img_file.read()).decode("utf-8")
-
-        with open(screenshot_filename, "rb") as img_file:
-            img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
+        # Compress only the labeled OUTPUT for upload; YOLO keeps full resolution
+        img_base64_labeled = _encode_image_fast(labeled_screenshot_filename)
 
         if len(messages) == 1:
             user_prompt = get_user_first_message_prompt()
@@ -1476,12 +1544,12 @@ async def call_custom_model_with_som(messages, objective, model, raw_model):
                 },
             ],
         }
-        messages.append(vision_message)
+        api_messages = _prepare_messages_with_single_latest_image(messages, user_prompt, img_base64_labeled)
 
         response = call_with_retry(
             client.chat.completions.create,
             model=raw_model,
-            messages=messages,
+            messages=api_messages,
             caller_name=f"{raw_model} (Google/Custom)",
         )
 
@@ -1497,8 +1565,9 @@ async def call_custom_model_with_som(messages, objective, model, raw_model):
             if op_type in ["click", "double_click", "right_click", "middle_click"]:
                 label = operation.get("label")
                 coordinates = get_label_coordinates(label, label_coordinates)
-                image = Image.open(io.BytesIO(base64.b64decode(img_base64)))
-                image_size = image.size
+                # Size from the on-disk screenshot matches the full-resolution
+                # coordinates YOLO produced
+                image_size = Image.open(screenshot_filename).size
                 click_position_percent = get_click_position_in_percent(
                     coordinates, image_size
                 )

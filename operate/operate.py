@@ -130,7 +130,8 @@ def main(
                     "status": "thinking",
                     "step": loop_count + 1,
                     "max_steps": max_steps,
-                    "message": f"Analyzing screen for step {loop_count + 1}..."
+                    "message": f"Analyzing screen for step {loop_count + 1}...",
+                    "screenshot_path": os.path.join("screenshots", "screenshot.png"),
                 })
 
             operations, session_id = asyncio.run(
@@ -146,7 +147,7 @@ def main(
 
             loop_count += 1
             # Allow the OS UI to settle and render changes before capturing the next screenshot
-            time.sleep(1.0)
+            time.sleep(0.15)
             if loop_count >= max_steps:
                 print(f"{ANSI_YELLOW}[Self-Operating Computer] Reached maximum step limit ({max_steps}).{ANSI_RESET}")
                 if step_callback:
@@ -195,8 +196,8 @@ def operate(operations, model, step_callback=None, stop_event=None, current_step
 
         if config.verbose:
             print("[Self Operating Computer][operate] operation", operation)
-        # wait one second
-        time.sleep(1)
+        # Settle delay between actions in batch
+        time.sleep(0.08)
         operate_type = operation.get("operation", "").lower()
         operate_thought = operation.get("thought", "")
         operate_detail = ""

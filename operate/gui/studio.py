@@ -92,13 +92,13 @@ class StudioWindow(tk.Tk):
         title_label = tk.Label(
             header,
             text="⚡ Self-Operating Computer",
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 13, "bold"),
             fg=self.c_text,
             bg=self.c_card,
-            padx=16,
-            pady=12,
+            padx=18,
+            pady=14,
         )
-        title_label.pack(side="left")
+        title_label.pack(side="left", padx=(0, 8))
 
         self.badge_status = tk.Label(
             header,
@@ -112,7 +112,7 @@ class StudioWindow(tk.Tk):
         self.badge_status.pack(side="right", padx=16, pady=12)
 
         # Main Scrollable / Paned Content
-        self.main_container = tk.Frame(self, bg=self.c_bg, padx=16, pady=12)
+        self.main_container = tk.Frame(self, bg=self.c_bg, padx=20, pady=16)
         self.main_container.pack(fill="both", expand=True)
         main_container = self.main_container
 
@@ -120,15 +120,15 @@ class StudioWindow(tk.Tk):
         config_card = tk.LabelFrame(
             main_container,
             text=" Provider & Model Configuration ",
-            font=("Segoe UI", 9, "bold"),
+            font=("Segoe UI", 10, "bold"),
             fg=self.c_text,
             bg=self.c_card,
             bd=1,
             relief="solid",
-            padx=14,
-            pady=10,
+            padx=16,
+            pady=14,
         )
-        config_card.pack(fill="x", pady=(0, 12))
+        config_card.pack(fill="x", pady=(0, 16))
 
         # Preset Provider Selector
         row0 = tk.Frame(config_card, bg=self.c_card)
@@ -203,10 +203,11 @@ class StudioWindow(tk.Tk):
             bg=self.c_input_bg,
             fg=self.c_text,
             insertbackground=self.c_text,
-            bd=0,
+            bd=1,
             relief="flat",
+            highlightthickness=0,
         )
-        self.base_url_entry.pack(side="left", fill="x", expand=True, padx=(4, 0), ipady=3)
+        self.base_url_entry.pack(side="left", fill="x", expand=True, padx=(4, 0), ipady=5)
 
         # API Key Field
         row2 = tk.Frame(config_card, bg=self.c_card)
@@ -229,10 +230,11 @@ class StudioWindow(tk.Tk):
             fg=self.c_text,
             insertbackground=self.c_text,
             show="•",
-            bd=0,
+            bd=1,
             relief="flat",
+            highlightthickness=0,
         )
-        self.api_key_entry.pack(side="left", fill="x", expand=True, padx=(4, 6), ipady=3)
+        self.api_key_entry.pack(side="left", fill="x", expand=True, padx=(4, 6), ipady=5)
 
         self.show_key_var = tk.BooleanVar(value=False)
         self.show_key_btn = tk.Checkbutton(
@@ -292,28 +294,28 @@ class StudioWindow(tk.Tk):
         prompt_card = tk.LabelFrame(
             main_container,
             text=" Objective Prompt ",
-            font=("Segoe UI", 9, "bold"),
+            font=("Segoe UI", 10, "bold"),
             fg=self.c_text,
             bg=self.c_card,
             bd=1,
             relief="solid",
-            padx=14,
-            pady=10,
+            padx=16,
+            pady=14,
         )
-        prompt_card.pack(fill="x", pady=(0, 12))
+        prompt_card.pack(fill="x", pady=(0, 16))
 
         self.prompt_text = tk.Text(
             prompt_card,
-            height=3,
+            height=4,
             font=("Segoe UI", 9),
             bg=self.c_input_bg,
             fg=self.c_text,
             insertbackground=self.c_text,
-            bd=0,
-            padx=8,
-            pady=6,
+            bd=1,
+            padx=12,
+            pady=8,
         )
-        self.prompt_text.pack(fill="x", pady=(0, 8))
+        self.prompt_text.pack(fill="x", pady=(0, 12))
         self.prompt_text.insert("1.0", "Open Google Chrome and search for latest AI news")
 
         # Action Bar in Prompt Card
@@ -365,8 +367,8 @@ class StudioWindow(tk.Tk):
             activebackground=self.c_primary_hover,
             activeforeground="#ffffff",
             bd=0,
-            padx=18,
-            pady=6,
+            padx=20,
+            pady=10,
             cursor="hand2",
             command=self._handle_start,
         )
@@ -376,25 +378,25 @@ class StudioWindow(tk.Tk):
         log_card = tk.LabelFrame(
             main_container,
             text=" Live Activity Log ",
-            font=("Segoe UI", 9, "bold"),
+            font=("Segoe UI", 10, "bold"),
             fg=self.c_text,
             bg=self.c_card,
             bd=1,
             relief="solid",
-            padx=12,
-            pady=8,
+            padx=14,
+            pady=12,
         )
         log_card.pack(fill="both", expand=True)
 
         self.log_console = scrolledtext.ScrolledText(
             log_card,
-            bg="#111114",
+            bg=self.c_input_bg,
             fg="#e4e4e7",
             insertbackground="#e4e4e7",
-            font=("Consolas", 8),
-            bd=0,
-            padx=8,
-            pady=8,
+            font=("Consolas", 9),
+            bd=1,
+            padx=10,
+            pady=10,
         )
         self.log_console.pack(fill="both", expand=True)
 
@@ -406,8 +408,13 @@ class StudioWindow(tk.Tk):
         self.log_console.tag_config("thought", foreground="#c084fc")
         self.log_console.tag_config("action", foreground="#38bdf8")
 
+        # Configure custom tag for status text
+        self.log_console.tag_config("status", foreground="#f4f4f5", font=("Consolas", 9, "bold"))
+
         # Google OAuth Panel (collapsible)
         self._build_oauth_panel(main_container)
+
+        self._oauth_panel = None
 
     def _toggle_show_key(self):
         if self.show_key_var.get():
@@ -420,15 +427,15 @@ class StudioWindow(tk.Tk):
         oauth_card = tk.LabelFrame(
             parent,
             text=" Google Account ",
-            font=("Segoe UI", 9, "bold"),
+            font=("Segoe UI", 10, "bold"),
             fg=self.c_text,
             bg=self.c_card,
             bd=1,
             relief="solid",
-            padx=14,
-            pady=8,
+            padx=16,
+            pady=12,
         )
-        oauth_card.pack(fill="x", pady=(8, 0), side="bottom")
+        oauth_card.pack(fill="x", pady=(12, 0), side="bottom")
 
         # Status row
         status_row = tk.Frame(oauth_card, bg=self.c_card)
@@ -466,14 +473,14 @@ class StudioWindow(tk.Tk):
         self.oauth_connect_btn = tk.Button(
             action_row,
             text="🔗 Connect Google Account",
-            font=("Segoe UI", 8, "bold"),
+            font=("Segoe UI", 9, "bold"),
             bg="#4285F4",
             fg="#ffffff",
             activebackground="#3367d6",
             activeforeground="#ffffff",
             bd=0,
-            padx=12,
-            pady=4,
+            padx=14,
+            pady=8,
             cursor="hand2",
             command=self._oauth_open_consent,
         )
