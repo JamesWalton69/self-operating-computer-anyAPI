@@ -49,6 +49,208 @@ OMNIROUTE_MODELS = [
 ]
 
 
+# ─── Centralized Theme Constants ─────────────────────────────────────────────
+# Single source of truth for every color, typography, and spacing token used by
+# the Studio window. The floating overlay mirrors this same palette.
+THEME = {
+    "bg":            "#121214",
+    "card":          "#1e1e24",
+    "card_alt":      "#26262d",
+    "card_border":   "#2a2a30",
+    "input_bg":      "#26262c",
+    "primary":       "#6366f1",
+    "primary_hover": "#818cf8",
+    "accent":        "#06b6d4",
+    "accent_hover":  "#22d3ee",
+    "danger":        "#dc2626",
+    "danger_hover":  "#f87171",
+    "success":       "#34d399",
+    "success_bg":    "#052e16",
+    "running":       "#818cf8",
+    "running_bg":    "#1e1b4b",
+    "warn":          "#fbbf24",
+    "text":          "#fafafa",
+    "text_muted":    "#a1a1aa",
+    "thumb_bg":      "#16161d",
+    "divider":       "#2a2a30",
+}
+
+# Log console tag colors (keyed by log level; None is the default)
+LOG_COLORS = {
+    "info":    "#60a5fa",
+    "success": "#34d399",
+    "warn":    "#fbbf24",
+    "error":   "#f87171",
+    "thought": "#c084fc",
+    "action":  "#38bdf8",
+    None:      "#e4e4e7",
+}
+
+# Typography tokens
+F_TITLE   = ("Segoe UI", 13, "bold")
+F_SECTION = ("Segoe UI", 9, "bold")
+F_LABEL   = ("Segoe UI", 8, "bold")
+F_BODY    = ("Segoe UI", 9)
+F_SMALL   = ("Segoe UI", 8)
+F_TINY    = ("Segoe UI", 7)
+F_LOG     = ("Consolas", 9)
+
+# Spacing tokens
+PAD_CARD  = 14
+PAD_ROW   = 8
+
+
+# ─── Provider Presets ─────────────────────────────────────────────────────────
+# Data-driven provider configuration. Each entry describes how the Studio
+# pre-fills the Base URL / API Key / Model fields when a preset is chosen.
+PROVIDER_CONFIGS = {
+    "Google Account (Direct Antigravity)": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "",
+        "default_model": "antigravity/gemini-3.7-flash-low",
+        "models": OMNIROUTE_MODELS,
+    },
+    "Local OmniRoute (localhost:20128)": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "http://localhost:20128/v1",
+        "default_key": "sk-b6fe217dd1fbeeda-18f222-7107776b",
+        "default_model": "agy/gemini-3.7-flash-low",
+        "models": OMNIROUTE_MODELS,
+    },
+    "Custom (OpenAI-compatible)": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "",
+        "default_model": "gpt-4o",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+    },
+    "Local Ollama (localhost:11434)": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "http://localhost:11434/v1",
+        "default_key": "ollama",
+        "default_model": "llava",
+        "models": ["llava", "llama3.2-vision", "qwen2.5-vl", "minicpm-v"],
+    },
+    "Local LM Studio (localhost:1234)": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "http://localhost:1234/v1",
+        "default_key": "lm-studio",
+        "default_model": "local-model",
+        "models": ["local-model"],
+    },
+    "Local vLLM (localhost:8000)": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "http://localhost:8000/v1",
+        "default_key": "none",
+        "default_model": "llava",
+        "models": ["llava", "qwen2.5-vl"],
+    },
+    "OpenRouter": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "https://openrouter.ai/api/v1",
+        "default_model": "anthropic/claude-3.5-sonnet",
+        "models": [
+            "anthropic/claude-3.5-sonnet",
+            "openai/gpt-4o",
+            "google/gemini-flash-1.5",
+        ],
+    },
+    "OpenAI Official": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "",
+        "default_model": "gpt-4o",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1-mini"],
+    },
+    "Anthropic Claude": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "",
+        "default_model": "claude-3",
+        "models": [
+            "claude-3-5-sonnet-latest",
+            "claude-3-opus-latest",
+            "claude-3-haiku-latest",
+        ],
+    },
+    "Google Gemini (API Key)": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "default_model": "gemini-3.1-flash-lite",
+        "models": ["gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"],
+    },
+    "Alibaba Qwen": {
+        "env_key": "OPENAI_API_KEY",
+        "default_url": "",
+        "default_model": "qwen-vl",
+        "models": ["qwen-vl", "qwen2.5-vl-72b"],
+    },
+}
+
+# Canonical ordering of presets in the selector (drives the combobox values).
+PRESET_ORDER = [
+    "Google Account (Direct Antigravity)",
+    "Local OmniRoute (localhost:20128)",
+    "Custom (OpenAI-compatible)",
+    "Local Ollama (localhost:11434)",
+    "Local LM Studio (localhost:1234)",
+    "Local vLLM (localhost:8000)",
+    "OpenRouter",
+    "OpenAI Official",
+    "Anthropic Claude",
+    "Google Gemini (API Key)",
+    "Alibaba Qwen",
+]
+
+
+class _ModernProgressBar(tk.Canvas):
+    """Canvas-based progress bar with a rounded fill and centered % label.
+
+    Replaces the default themed progressbar so the bar matches the Studio's
+    custom color palette exactly.
+    """
+
+    def __init__(self, master, bg=None, track=None, fill=None, border=None,
+                 height=20, label_font=None, **kwargs):
+        super().__init__(
+            master,
+            height=height,
+            bg=bg or THEME["input_bg"],
+            highlightthickness=1,
+            highlightbackground=border or THEME["card_border"],
+            bd=0,
+            **kwargs,
+        )
+        self._track = track or THEME["input_bg"]
+        self._fill = fill or THEME["accent"]
+        self._border = border or THEME["card_border"]
+        self._label = "0%"
+        self._fraction = 0.0
+        self._label_font = label_font or ("Segoe UI", 7, "bold")
+        self.bind("<Configure>", lambda _e: self._redraw())
+
+    def set_fraction(self, fraction, label=None):
+        try:
+            self._fraction = max(0.0, min(1.0, float(fraction)))
+        except (TypeError, ValueError):
+            self._fraction = 0.0
+        if label is not None:
+            self._label = str(label)
+        self._redraw()
+
+    def _redraw(self):
+        self.delete("all")
+        w = max(self.winfo_width(), 1)
+        h = max(self.winfo_height(), 1)
+        # Track (full width)
+        self.create_rectangle(0, 0, w, h, fill=self._track, outline="")
+        fill_w = int(w * self._fraction)
+        if fill_w > 0:
+            self.create_rectangle(0, 0, fill_w, h, fill=self._fill, outline="")
+        # Centered percentage label — light text reads on both track and fill
+        self.create_text(
+            w // 2, h // 2, text=self._label,
+            fill=THEME["text"], font=self._label_font,
+        )
+
+
 class StudioWindow(tk.Tk):
     def __init__(self, on_start=None, on_stop=None):
         super().__init__()
@@ -59,7 +261,7 @@ class StudioWindow(tk.Tk):
         self.title("Self-Operating Computer Studio")
         self.geometry("880x720")
         self.minsize(780, 600)
-        self.configure(bg="#09090b")
+        self.configure(bg=THEME["bg"])
 
         self._init_theme()
         self._build_ui()
@@ -72,17 +274,20 @@ class StudioWindow(tk.Tk):
         except Exception:
             pass
 
-        # Dark theme color tokens
-        self.c_bg = "#09090b"
-        self.c_card = "#18181b"
-        self.c_card_border = "#27272a"
-        self.c_primary = "#3b82f6"
-        self.c_primary_hover = "#2563eb"
-        self.c_danger = "#dc2626"
-        self.c_danger_hover = "#b91c1c"
-        self.c_text = "#fafafa"
-        self.c_text_muted = "#a1a1aa"
-        self.c_input_bg = "#27272a"
+        # Dark theme color tokens — sourced from the centralized THEME dict
+        self.c_bg = THEME["bg"]
+        self.c_card = THEME["card"]
+        self.c_card_border = THEME["card_border"]
+        self.c_primary = THEME["primary"]
+        self.c_primary_hover = THEME["primary_hover"]
+        self.c_accent = THEME["accent"]
+        self.c_accent_hover = THEME["accent_hover"]
+        self.c_danger = THEME["danger"]
+        self.c_danger_hover = THEME["danger_hover"]
+        self.c_success = THEME["success"]
+        self.c_text = THEME["text"]
+        self.c_text_muted = THEME["text_muted"]
+        self.c_input_bg = THEME["input_bg"]
 
     def _build_ui(self):
         # Header Bar
@@ -103,13 +308,16 @@ class StudioWindow(tk.Tk):
         self.badge_status = tk.Label(
             header,
             text="Ready",
-            font=("Segoe UI", 8, "bold"),
-            fg="#22c55e",
-            bg="#052e16",
-            padx=10,
+            font=F_LABEL,
+            fg=THEME["success"],
+            bg=THEME["success_bg"],
+            padx=12,
             pady=4,
         )
         self.badge_status.pack(side="right", padx=16, pady=12)
+
+        # Subtle divider between header and content
+        tk.Frame(self, bg=THEME["divider"], height=1).pack(fill="x")
 
         # Main Scrollable / Paned Content
         self.main_container = tk.Frame(self, bg=self.c_bg, padx=20, pady=16)
@@ -145,18 +353,7 @@ class StudioWindow(tk.Tk):
         ).pack(side="left")
 
         self.preset_var = tk.StringVar(value="Custom (OpenAI-compatible)")
-        presets = [
-            "Custom (OpenAI-compatible)",
-            "Local Ollama (localhost:11434)",
-            "Local LM Studio (localhost:1234)",
-            "Local vLLM (localhost:8000)",
-            "Local OmniRoute (localhost:20128)",
-            "OpenRouter",
-            "OpenAI Official",
-            "Anthropic Claude",
-            "Google Gemini",
-            "Alibaba Qwen",
-        ]
+        presets = list(PRESET_ORDER)
         self.preset_menu = ttk.Combobox(
             row0,
             textvariable=self.preset_var,
@@ -374,11 +571,48 @@ class StudioWindow(tk.Tk):
         )
         self.start_btn.pack(side="right")
 
+        # Execution Progress Card — custom canvas-based bar matching the palette
+        progress_card = tk.LabelFrame(
+            main_container,
+            text=" Execution Progress ",
+            font=F_SECTION,
+            fg=self.c_text,
+            bg=self.c_card,
+            bd=1,
+            relief="solid",
+            padx=16,
+            pady=12,
+        )
+        progress_card.pack(fill="x", pady=(0, 16))
+
+        progress_row = tk.Frame(progress_card, bg=self.c_card)
+        progress_row.pack(fill="x")
+
+        self.progress_status_label = tk.Label(
+            progress_row,
+            text="Idle — waiting to start",
+            font=F_SMALL,
+            fg=self.c_text_muted,
+            bg=self.c_card,
+            anchor="w",
+        )
+        self.progress_status_label.pack(side="left", padx=(0, 12))
+
+        self.progress_bar = _ModernProgressBar(
+            progress_row,
+            bg=self.c_card,
+            track=self.c_input_bg,
+            fill=self.c_accent,
+            border=self.c_card_border,
+            height=20,
+        )
+        self.progress_bar.pack(side="right", fill="x", expand=True)
+
         # Live Execution Console Card
         log_card = tk.LabelFrame(
             main_container,
-            text=" Live Activity Log ",
-            font=("Segoe UI", 10, "bold"),
+            text=" Live Activity & Visual Inspector ",
+            font=F_SECTION,
             fg=self.c_text,
             bg=self.c_card,
             bd=1,
@@ -388,25 +622,99 @@ class StudioWindow(tk.Tk):
         )
         log_card.pack(fill="both", expand=True)
 
+        # Console header: title + auto-scroll toggle + clear
+        log_header = tk.Frame(log_card, bg=self.c_card)
+        log_header.pack(fill="x", pady=(0, 6))
+
+        tk.Label(
+            log_header,
+            text="Console",
+            font=F_LABEL,
+            fg=self.c_text_muted,
+            bg=self.c_card,
+        ).pack(side="left")
+
+        self._log_follow = True
+        self.log_follow_btn = tk.Label(
+            log_header,
+            text="⌖ Auto-scroll",
+            font=F_LABEL,
+            fg=self.c_accent,
+            bg=self.c_card,
+            padx=8,
+            pady=2,
+            cursor="hand2",
+        )
+        self.log_follow_btn.pack(side="right")
+        self.log_follow_btn.bind("<Button-1>", lambda _e: self._toggle_log_follow())
+
+        clear_btn = tk.Button(
+            log_header,
+            text="Clear",
+            font=F_TINY,
+            bg=self.c_input_bg,
+            fg=self.c_text_muted,
+            activebackground=self.c_card_border,
+            activeforeground=self.c_text,
+            bd=0,
+            padx=8,
+            pady=2,
+            cursor="hand2",
+            command=self._clear_log,
+        )
+        clear_btn.pack(side="right", padx=(0, 6))
+
+        # Split: console (left, expanding) + screenshot thumbnail (right)
+        log_split = tk.Frame(log_card, bg=self.c_card)
+        log_split.pack(fill="both", expand=True)
+
         self.log_console = scrolledtext.ScrolledText(
-            log_card,
+            log_split,
             bg=self.c_input_bg,
             fg="#e4e4e7",
             insertbackground="#e4e4e7",
-            font=("Consolas", 9),
+            font=F_LOG,
             bd=1,
             padx=10,
             pady=10,
         )
-        self.log_console.pack(fill="both", expand=True)
+        self.log_console.pack(side="left", fill="both", expand=True)
 
-        # Tags for colored logs
-        self.log_console.tag_config("info", foreground="#60a5fa")
-        self.log_console.tag_config("success", foreground="#34d399")
-        self.log_console.tag_config("warn", foreground="#fbbf24")
-        self.log_console.tag_config("error", foreground="#f87171")
-        self.log_console.tag_config("thought", foreground="#c084fc")
-        self.log_console.tag_config("action", foreground="#38bdf8")
+        # Vertical divider between console and thumbnail
+        tk.Frame(log_split, bg=self.c_card_border, width=1).pack(side="left", fill="y", padx=(8, 8))
+
+        # Screenshot thumbnail panel
+        thumb_panel = tk.Frame(log_split, bg=self.c_card, width=300)
+        thumb_panel.pack(side="right", fill="y")
+        thumb_panel.pack_propagate(False)
+
+        tk.Label(
+            thumb_panel,
+            text="Latest Screenshot",
+            font=F_LABEL,
+            fg=self.c_text_muted,
+            bg=self.c_card,
+            anchor="w",
+        ).pack(fill="x", pady=(0, 4))
+
+        self.thumb_label = tk.Label(
+            thumb_panel,
+            text="📷\n\nNo capture yet\n\nUpdates each step",
+            font=F_BODY,
+            fg=self.c_text_muted,
+            bg=THEME["thumb_bg"],
+            justify="center",
+        )
+        self.thumb_label.pack(fill="both", expand=True)
+        self._thumb_photo = None
+
+        # Tags for colored logs — refined for contrast
+        self.log_console.tag_config("info", foreground=LOG_COLORS["info"])
+        self.log_console.tag_config("success", foreground=LOG_COLORS["success"])
+        self.log_console.tag_config("warn", foreground=LOG_COLORS["warn"])
+        self.log_console.tag_config("error", foreground=LOG_COLORS["error"])
+        self.log_console.tag_config("thought", foreground=LOG_COLORS["thought"])
+        self.log_console.tag_config("action", foreground=LOG_COLORS["action"])
 
         # Configure custom tag for status text
         self.log_console.tag_config("status", foreground="#f4f4f5", font=("Consolas", 9, "bold"))
@@ -597,37 +905,37 @@ class StudioWindow(tk.Tk):
             self.log_message(f"Disconnect error: {e}", "error")
 
     def _on_preset_change(self, event=None):
+        """Pre-fill Base URL / API Key / Model from the centralized PROVIDER_CONFIGS."""
         preset = self.preset_var.get()
-        if preset == "Local Ollama (localhost:11434)":
-            self.base_url_entry.delete(0, "end")
-            self.base_url_entry.insert(0, "http://localhost:11434/v1")
-            self.api_key_entry.delete(0, "end")
-            self.api_key_entry.insert(0, "ollama")
+        cfg = PROVIDER_CONFIGS.get(preset, {})
+
+        # "Custom" is fully user-supplied — leave existing fields untouched.
+        if preset == "Custom (OpenAI-compatible)":
+            return
+
+        base_url = cfg.get("default_url", "")
+        api_key = cfg.get("default_key", "")
+        model = cfg.get("default_model", "")
+
+        self.base_url_entry.delete(0, "end")
+        self.base_url_entry.insert(0, base_url)
+
+        self.api_key_entry.delete(0, "end")
+        self.api_key_entry.insert(0, api_key)
+
+        if cfg.get("models"):
+            self.model_entry["values"] = list(cfg["models"])
+        if model:
             self.model_entry.delete(0, "end")
-            self.model_entry.insert(0, "llava")
-        elif preset == "Local LM Studio (localhost:1234)":
-            self.base_url_entry.delete(0, "end")
-            self.base_url_entry.insert(0, "http://localhost:1234/v1")
-            self.api_key_entry.delete(0, "end")
-            self.api_key_entry.insert(0, "lm-studio")
-        elif preset == "Local vLLM (localhost:8000)":
-            self.base_url_entry.delete(0, "end")
-            self.base_url_entry.insert(0, "http://localhost:8000/v1")
-            self.api_key_entry.delete(0, "end")
-            self.api_key_entry.insert(0, "none")
-        elif preset == "Local OmniRoute (localhost:20128)":
-            self.base_url_entry.delete(0, "end")
-            self.base_url_entry.insert(0, "http://localhost:20128/v1")
-            self.api_key_entry.delete(0, "end")
-            self.api_key_entry.insert(0, "sk-b6fe217dd1fbeeda-18f222-7107776b")
-            self.model_entry["values"] = OMNIROUTE_MODELS
-            self.model_entry.delete(0, "end")
-            self.model_entry.insert(0, "agy/gemini-3.7-flash-low")
+            self.model_entry.insert(0, model)
+
+        # OmniRoute: try to discover live models from the running server
+        if preset == "Local OmniRoute (localhost:20128)":
             try:
                 import urllib.request, json
                 req = urllib.request.Request(
                     "http://localhost:20128/v1/models",
-                    headers={"Authorization": "Bearer sk-b6fe217dd1fbeeda-18f222-7107776b"}
+                    headers={"Authorization": f"Bearer {api_key}"}
                 )
                 with urllib.request.urlopen(req, timeout=1.0) as resp:
                     m_data = json.loads(resp.read().decode())
@@ -637,29 +945,6 @@ class StudioWindow(tk.Tk):
                         self.log_message(f"Discovered {len(live_models)} live models from OmniRoute.", "info")
             except Exception:
                 pass
-        elif preset == "OpenRouter":
-            self.base_url_entry.delete(0, "end")
-            self.base_url_entry.insert(0, "https://openrouter.ai/api/v1")
-            if not self.model_entry.get() or self.model_entry.get() == "gpt-4o":
-                self.model_entry.delete(0, "end")
-                self.model_entry.insert(0, "anthropic/claude-3.5-sonnet")
-        elif preset == "OpenAI Official":
-            self.base_url_entry.delete(0, "end")
-            self.model_entry.delete(0, "end")
-            self.model_entry.insert(0, "gpt-4o")
-        elif preset == "Anthropic Claude":
-            self.base_url_entry.delete(0, "end")
-            self.model_entry.delete(0, "end")
-            self.model_entry.insert(0, "claude-3")
-        elif preset == "Google Gemini":
-            self.base_url_entry.delete(0, "end")
-            self.base_url_entry.insert(0, "https://generativelanguage.googleapis.com/v1beta/openai/")
-            self.model_entry.delete(0, "end")
-            self.model_entry.insert(0, "gemini-3.1-flash-lite")
-        elif preset == "Alibaba Qwen":
-            self.base_url_entry.delete(0, "end")
-            self.model_entry.delete(0, "end")
-            self.model_entry.insert(0, "qwen-vl")
 
     def _load_saved_config(self):
         base_url = os.getenv("OPENAI_API_BASE_URL", "")
@@ -726,7 +1011,63 @@ class StudioWindow(tk.Tk):
 
     def log_message(self, text, tag=None):
         self.log_console.insert("end", text + "\n", tag)
-        self.log_console.see("end")
+        if getattr(self, "_log_follow", True):
+            self.log_console.see("end")
+
+    # ------------------------------------------------------------------
+    # Execution progress + screenshot thumbnail (called from app.py)
+    # ------------------------------------------------------------------
+
+    def update_progress(self, step, max_steps, status=None):
+        """Advance the progress bar to ``step`` of ``max_steps``."""
+        try:
+            total = int(max_steps) if max_steps else 0
+        except (TypeError, ValueError):
+            total = 0
+        try:
+            cur = int(step) if step is not None else 0
+        except (TypeError, ValueError):
+            cur = 0
+        frac = (cur / total) if total > 0 else 0.0
+        label = f"Step {cur}/{total}" if total else "—"
+        self.progress_bar.set_fraction(frac, label)
+        if status:
+            self.progress_status_label.config(text=str(status))
+
+    def finish_progress(self, text="Completed"):
+        """Fill the progress bar and mark the run as finished."""
+        self.progress_bar.set_fraction(1.0, "✓ Done")
+        if text:
+            self.progress_status_label.config(text=str(text))
+
+    def update_screenshot(self, image_path):
+        """Refresh the thumbnail panel with the latest screenshot."""
+        if not image_path:
+            return
+        try:
+            from PIL import Image, ImageTk
+            img = Image.open(image_path)
+            img.thumbnail((290, 170))
+            self._thumb_photo = ImageTk.PhotoImage(img)
+            self.thumb_label.config(image=self._thumb_photo, text="")
+        except Exception:
+            # Keep the placeholder if the image cannot be loaded
+            self.thumb_label.config(
+                image="", text="📷\n\nNo capture yet\n\nUpdates each step"
+            )
+
+    def _toggle_log_follow(self):
+        """Toggle auto-scroll (follow) mode for the console."""
+        self._log_follow = not self._log_follow
+        if self._log_follow:
+            self.log_follow_btn.config(text="⌖ Auto-scroll", fg=self.c_accent)
+            self.log_console.see("end")
+        else:
+            self.log_follow_btn.config(text="⌖ Paused", fg=self.c_text_muted)
+
+    def _clear_log(self):
+        """Clear the console."""
+        self.log_console.delete("1.0", "end")
 
     def get_full_model_identifier(self):
         raw_model = self.model_entry.get().strip() or "gpt-4o"
@@ -760,7 +1101,7 @@ class StudioWindow(tk.Tk):
         if api_key:
             os.environ["OPENAI_API_KEY"] = api_key
 
-        self.badge_status.config(text="Running", fg="#60a5fa", bg="#1e3a8a")
+        self.badge_status.config(text="Running", fg=THEME["running"], bg=THEME["running_bg"])
         self.start_btn.config(
             text="■ Stop",
             bg=self.c_danger,
@@ -788,7 +1129,7 @@ class StudioWindow(tk.Tk):
 
     def on_run_finished(self, summary=""):
         self.is_running = False
-        self.badge_status.config(text="Ready", fg="#22c55e", bg="#052e16")
+        self.badge_status.config(text="Ready", fg=THEME["success"], bg=THEME["success_bg"])
         self.start_btn.config(
             text="▶ Run Objective",
             bg=self.c_primary,

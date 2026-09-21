@@ -79,3 +79,33 @@ Modernize the Self-Operating Computer Studio GUI with improved aesthetics, layou
 - **Inputs**: Better padding, improved visual consistency
 - **Overlay**: Updated colors, larger status dot, improved button spacing
 - **All changes maintain full backward compatibility with existing functionality**
+
+---
+
+## 🚀 Implementation Status (shipped)
+
+All refinements implemented in `operate/gui/studio.py` and `operate/gui/overlay.py`.
+
+| Refinement | Status | Where |
+| --- | --- | --- |
+| Centralized theme constants | ✅ | `THEME`, `LOG_COLORS`, `F_*` font tokens, `PAD_*` spacing tokens at top of `studio.py` |
+| Color palette | ✅ | Indigo primary `#6366f1`, bg `#121214`, success `#34d399`; `_init_theme()` sources every token from `THEME` |
+| Typography upgrade | ✅ | Log console `Consolas 8 → 9` (`F_LOG`); fonts routed through tokens |
+| Spacing & dividers | ✅ | Header divider; console↔thumbnail divider; `PAD_CARD`/`PAD_ROW` rhythm |
+| Custom progress bar | ✅ | New `_ModernProgressBar` (canvas-based, palette-matched, centered % label) + **Execution Progress** card |
+| Log console UX | ✅ | `⌖ Auto-scroll` follow toggle + `Clear` button; `log_message` respects the flag |
+| Thumbnail placeholder | ✅ | **Latest Screenshot** panel with `📷 No capture yet` placeholder; `update_screenshot()` letterboxes via PIL with graceful fallback |
+| Overlay improvements | ✅ | `overlay.py` palette aligned to the same indigo theme; pulsing status dot, error shake, slide-out-and-destroy retained |
+| Provider presets | ✅ | New `PROVIDER_CONFIGS` (11 presets) + `PRESET_ORDER`; `_on_preset_change()` data-driven (removed ~60 lines of if/elif) |
+
+### Bugs found & fixed during implementation
+1. **Failing GUI unit test** — `tests/test_gui_studio_logic.py` raised `ImportError: cannot import name 'PROVIDER_CONFIGS'`. Fixed by adding the constant.
+2. **Runtime crash in app.py** — `update_progress` / `update_screenshot` / `finish_progress` were called by `app.py` but never defined on `StudioWindow`. All three implemented.
+
+### Verification
+- `py_compile` on `operate/gui/{studio,overlay,app,animate}.py` → exit 0
+- `python -m unittest tests.test_gui_studio_logic` → **3/3 OK**
+- Headless smoke test: full public API of `StudioWindow` + `FloatingOverlay`, no exceptions
+
+### Cleanup
+- Removed redundant `operate/gui/theme.py` (dead code, no importers, conflicting palette). `studio.py` is the single source of truth.
